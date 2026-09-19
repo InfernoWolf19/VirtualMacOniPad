@@ -6,17 +6,30 @@ export PATH=/var/jb/usr/bin:/var/jb/usr/sbin:/var/jb/bin:/var/jb/sbin:/usr/bin:/
 # Prepare ElleKit's canonical loader directory for postinst. Some bootstrap
 # revisions omit it, while their MobileSubstrate compatibility path may be a
 # dangling symlink. The tweak is copied here only after dpkg has cleaned paths
-# owned by 1.0, avoiding an upgrade-time alias collision.
+# owned by 1.0, avoiding an upgrade-time alias collision. This directory is
+# shared with every other tweak, so it is created but never removed.
 mkdir -p /var/jb/usr/lib/TweakInject
 
-# Some system and bootstrap combinations leave /var/root at 0750. Virtual Mac
-# runs as mobile and must traverse it to execute the root-owned setuid restore
-# launcher. Add traverse permission only; this does not permit directory
-# listing and preserves every existing owner/group permission bit. Do this
-# unconditionally so repair does not depend on a bootstrap's `su` behavior.
-if test -d /var/root; then
-    chmod o+x /var/root
+# Releases up to 1.2.3 put the framework runtime at /var/root/VirtualMac so
+# that one absolute path served both a rootful bootstrap, which has no
+# /var/jb, and a rootless one. That tree sits outside the prefix, so removing
+# the jailbreak stranded it where nothing accounted for it and no package
+# manager could clean it up. This release is rootless-only and owns nothing
+# there. Reclaim it, and take back the traverse bit that earlier releases
+# added to root's home so that mobile could reach the setuid launcher: the
+# runtime's presence is the evidence that this package added it, rather than
+# something else on the system.
+if test -d /var/root/VirtualMac; then
+    rm -rf /var/root/VirtualMac
+    chmod o-x /var/root 2>/dev/null || true
 fi
+
+# Up to 1.2.3 the archive also carried ./var/root/ as an owned directory. This
+# one does not, so dpkg treats it as obsolete and tries to remove it once the
+# new files are unpacked. /var/root is root's home and must survive that pass,
+# so keep it non-empty with an unowned entry; postinst deletes the marker once
+# dpkg has finished.
+touch /var/root/.virtualmac-preserve-root 2>/dev/null || true
 
 killall VirtualMac 2>/dev/null || true
 killall com.apple.Virtualization.VirtualMachine 2>/dev/null || true

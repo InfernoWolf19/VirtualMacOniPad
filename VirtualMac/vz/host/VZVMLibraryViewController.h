@@ -20,8 +20,11 @@ NSArray<NSDictionary *> *VZDiscoverVirtualMachines(void);
 NSArray<NSString *> *VZInstallationArtifactPaths(void);
 NSArray<NSString *> *VZCachedRestoreImagePaths(void);
 void VZRemovePaths(NSArray<NSString *> *paths);
+// Everything Virtual Mac stores: the machines themselves, restore images,
+// installation staging and settings. It lives inside the jailbreak prefix, so
+// removing the package or the jailbreak takes it with them, and the setuid
+// installer's path checks are written against it as a fixed location.
 NSString *VZVMLibraryPath(void);
-NSString *VZVMSupportPath(void);
 NSString *VZRestoreImagesPath(void);
 NSString *VZInstallationsPath(void);
 

@@ -2,7 +2,7 @@
 
 # Install Virtual Mac in the rootless jailbreak application directory. This is
 # the proven System-app configuration used by the native VMM. VM bundles live
-# outside the app registration/container model at /var/mobile/Media/VirtualMac.
+# outside the app registration/container model at /var/jb/var/mobile/VirtualMac.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -14,7 +14,7 @@ BIN="$APP/VirtualMac"
 HOOK="$APP/VZHostCompat.dylib"
 BUNDLE_ID="com.mac.virtual"
 REMOTE_APP="/var/jb/Applications/VirtualMac.app"
-REMOTE_LIBRARY="/var/mobile/Media/VirtualMac"
+REMOTE_LIBRARY="/var/jb/var/mobile/VirtualMac"
 ARCHIVE="$(mktemp -t virtual-mac-app.XXXXXX.tar.gz)"
 trap 'rm -f "$ARCHIVE"' EXIT
 

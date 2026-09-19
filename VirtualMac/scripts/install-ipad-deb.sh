@@ -20,20 +20,20 @@ fi
 [[ -n "$DEB" && -f "$DEB" ]] ||
     die "standalone package not found; run scripts/build-ipad-deb.sh first"
 
-# Refuse an unsafe development package before it reaches a rootful jailbreak.
-# Apple system files are outside Virtual Mac's ownership; all Taurine helpers
-# must live below /var/root/VirtualMac/rootful.
+# Refuse an unsafe development package before it reaches the device. This
+# package is rootless-only and contained, so every member must land inside
+# the jailbreak prefix; an entry anywhere else would outlive a jailbreak
+# removal with no package manager left to clean it up.
 archive_paths="$(dpkg-deb --fsys-tarfile "$DEB" | tar -tf -)"
-for forbidden in \
-    ./usr/libexec/bootpd \
-    ./usr/libexec/InternetSharing \
-    ./Library/LaunchDaemons/com.apple.bootpd.plist; do
-    if printf '%s\n' "$archive_paths" | grep -Fxq "$forbidden"; then
-        die "refusing package that replaces an Apple system path: $forbidden"
-    fi
-done
+while IFS= read -r member; do
+    case "$member" in
+        ./|./var/|./var/jb|./var/jb/*) ;;
+        *) die "refusing package that installs outside /var/jb: $member" ;;
+    esac
+done <<<"$archive_paths"
 
-rootless="$(ipad_ssh 'test -x /var/jb/usr/bin/jbctl && echo 1 || echo 0')"
+ipad_ssh 'test -x /var/jb/usr/bin/jbctl || test -x /var/jb/basebin/jbctl' ||
+    die "iPad is not running a rootless jailbreak; this package requires one"
 system_bootpd_before="$(ipad_ssh 'sha256sum /usr/libexec/bootpd | cut -d" " -f1')"
 
 REMOTE_DEB="/tmp/$(basename "$DEB")"
@@ -60,12 +60,11 @@ status="$(ipad_ssh "dpkg-query -W -f='\${db:Status-Status}' \
 
 ipad_ssh "
 set -eu
-test -u /var/root/VirtualMac/install/install-launcher
-test -d /var/mobile/Media/VirtualMac
+test -u /var/jb/usr/libexec/VirtualMac/install/install-launcher
+test -d /var/jb/var/mobile/VirtualMac
 "
 
-if [[ "$rootless" == 1 ]]; then
-    ipad_ssh "
+ipad_ssh "
 set -eu
 test -x /var/jb/Applications/VirtualMac.app/VirtualMac
 test -f /var/jb/usr/lib/TweakInject/VZKeyboardPassthrough.dylib
@@ -77,19 +76,6 @@ launchctl print user/501/vzi.apple.bootpd >/dev/null
 launchctl print user/501/com.apple.NetworkSharing >/dev/null
 /var/jb/usr/bin/uicache -l | grep -F 'com.mac.virtual' >/dev/null
 "
-else
-    ipad_ssh "
-set -eu
-test -x /Applications/VirtualMac.app/VirtualMac
-test -x /usr/libexec/VirtualMac/bootpd
-test -f /usr/lib/TweakInject/VZKeyboardPassthrough.dylib
-# iPadOS 14 DHCP is deliberately absent until InternetSharing has produced
-# its config; an install-time socket job is a launchd retry-loop hazard.
-test -f /var/root/VirtualMac/rootful/Library/LaunchDaemons/com.apple.bootpd.plist
-! launchctl print system/vzi.apple.bootpd >/dev/null 2>&1
-launchctl print system/com.apple.NetworkSharing >/dev/null
-"
-fi
 
 system_bootpd_after="$(ipad_ssh 'sha256sum /usr/libexec/bootpd | cut -d" " -f1')"
 [[ "$system_bootpd_after" == "$system_bootpd_before" ]] ||

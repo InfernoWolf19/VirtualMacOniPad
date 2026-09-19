@@ -123,22 +123,17 @@ static uint64_t GiB(uint64_t value)
 
 NSString *VZVMLibraryPath(void)
 {
-    return VZVMSupportPath();
-}
-
-NSString *VZVMSupportPath(void)
-{
-    return @"/var/mobile/Media/VirtualMac";
+    return @"/var/jb/var/mobile/VirtualMac";
 }
 
 NSString *VZRestoreImagesPath(void)
 {
-    return [VZVMSupportPath() stringByAppendingPathComponent:@"Restore Images"];
+    return [VZVMLibraryPath() stringByAppendingPathComponent:@"Restore Images"];
 }
 
 NSString *VZInstallationsPath(void)
 {
-    return [VZVMSupportPath() stringByAppendingPathComponent:@"Installations"];
+    return [VZVMLibraryPath() stringByAppendingPathComponent:@"Installations"];
 }
 
 static uint64_t VZDeviceMemoryLimit(void)
@@ -589,7 +584,7 @@ void VZRemovePaths(NSArray<NSString *> *paths)
         // files that the UIKit process cannot unlink. The setuid launcher
         // accepts only descendants of the two artifact directories.
         const char *launcher =
-            "/var/root/VirtualMac/install/install-launcher";
+            "/var/jb/usr/libexec/VirtualMac/install/install-launcher";
         char *arguments[] = {(char *)launcher, "--delete-artifact",
             (char *)path.fileSystemRepresentation, NULL};
         pid_t child = 0;

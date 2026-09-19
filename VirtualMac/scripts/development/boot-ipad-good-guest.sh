@@ -20,7 +20,7 @@ for ((attempt = 1; attempt <= ATTEMPTS; attempt++)); do
     VZ_GUEST_STOP_TIMEOUT=5 "$SCRIPT_DIR/restore-ipad-good-guest.sh"
     VZ_IPAD_BOOT_TIMEOUT="$TIMEOUT" \
         "$SCRIPT_DIR/boot-ipad-vm-bundle.sh" \
-        /var/mobile/Media/VirtualMac/GoodVM.bundle
+        /var/jb/var/mobile/VirtualMac/GoodVM.bundle
 
     previous_frames=-1
     unchanged=0

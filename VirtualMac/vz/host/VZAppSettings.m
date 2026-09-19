@@ -28,7 +28,7 @@ NSString * const VZDebugLoggingModeOff = @"off";
 NSString * const VZDebugLoggingModeNextBoot = @"next";
 NSString * const VZDebugLoggingModeAlways = @"always";
 
-static NSString * const VZSettingsPath = @"/var/mobile/Media/VirtualMac/Settings.plist";
+static NSString * const VZSettingsPath = @"/var/jb/var/mobile/VirtualMac/Settings.plist";
 static CFStringRef const VZSettingsDarwinNotification =
     CFSTR("com.mac.virtual.settings-changed");
 

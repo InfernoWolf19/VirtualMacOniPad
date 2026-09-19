@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/common.sh
 source "$SCRIPT_DIR/../lib/common.sh"
 
-IPAD_ROOT="/var/mobile/Media/VirtualMac"
+IPAD_ROOT="/var/jb/var/mobile/VirtualMac"
 BASELINE="${VZ_IPAD_BASELINE:-$IPAD_ROOT/Baselines/GoodVM.bundle}"
 WORKING="$IPAD_ROOT/GoodVM.bundle"
 STAGE="$IPAD_ROOT/Transfers/GoodVM-restore-stage.bundle"

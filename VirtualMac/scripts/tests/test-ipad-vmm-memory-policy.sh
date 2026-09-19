@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/../lib/common.sh"
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 OUT="$VZ_BUILD_ROOT/memorystatus-probe"
 BIN="$OUT/memorystatus-probe"
-REMOTE="${VZ_IPAD_WORK:-/var/root/VirtualMac}/memorystatus-probe"
+REMOTE="${VZ_IPAD_WORK:-/var/jb/usr/libexec/VirtualMac}/memorystatus-probe"
 
 need_command ldid
 need_command xcrun

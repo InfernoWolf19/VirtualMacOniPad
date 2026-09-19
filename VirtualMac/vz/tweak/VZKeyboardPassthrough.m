@@ -29,7 +29,7 @@ static const char *gTargetBundleID = "com.mac.virtual";
 static const char *gOpenAfterRespring =
     "/tmp/virtual-mac-open-after-respring";
 static const char *gVMActiveMarker = "/tmp/virtual-mac-vm-active";
-static NSString * const gSettingsPath = @"/var/mobile/Media/VirtualMac/Settings.plist";
+static NSString * const gSettingsPath = @"/var/jb/var/mobile/VirtualMac/Settings.plist";
 static NSDictionary *gSettings;
 
 static BOOL VZSettingEnabled(NSString *key)

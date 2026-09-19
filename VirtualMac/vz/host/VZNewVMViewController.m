@@ -224,7 +224,7 @@ static UIImage *VZCatalogIcon(NSDictionary *image)
 {
     (void)tableView;
     return section == 2
-        ? VZL(@"You can also copy an existing Virtual Mac bundle to /var/mobile/Media/VirtualMac using an app such as iMazing or Filza.")
+        ? VZL(@"You can also copy an existing Virtual Mac bundle to /var/jb/var/mobile/VirtualMac using an app such as iMazing or Filza.")
         : nil;
 }
 

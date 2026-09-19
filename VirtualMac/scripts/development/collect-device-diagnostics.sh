@@ -117,7 +117,7 @@ for index in "${!udids[@]}"; do
         done
         archive="$("${ssh_command[@]}" "$target" \
             '/var/jb/usr/bin/virtualmac-diagnostics 2>/dev/null' || true)"
-        if [[ "$archive" == /var/mobile/Media/VirtualMac/Diagnostics/*.zip ]]; then
+        if [[ "$archive" == /var/jb/var/mobile/VirtualMac/Diagnostics/*.zip ]]; then
             "${scp_command[@]}" "$target:$archive" \
                 "$destination/" >/dev/null 2>&1 || true
         fi

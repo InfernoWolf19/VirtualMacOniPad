@@ -32,7 +32,7 @@ static uint32_t VZCRC32(NSData *data)
 
 static NSString *VZDiagnosticsLibraryPath(void)
 {
-    return @"/var/mobile/Media/VirtualMac";
+    return @"/var/jb/var/mobile/VirtualMac";
 }
 
 static NSArray *VZDiagnosticsInstallationPaths(void)
@@ -102,10 +102,14 @@ static NSData *VZInstallerPreflightData(void)
     NSMutableString *report = [NSMutableString stringWithFormat:
         @"caller uid=%u euid=%u gid=%u egid=%u\n",
         getuid(), geteuid(), getgid(), getegid()];
-    NSArray *paths = @[@"/var", @"/var/root", @"/var/root/VirtualMac",
-        @"/var/root/VirtualMac/install",
-        @"/var/root/VirtualMac/install/install-launcher",
-        @"/var/root/VirtualMac/install/start-install.sh"];
+    NSArray *paths = @[@"/var", @"/var/jb", @"/var/jb/usr/libexec/VirtualMac",
+        @"/var/jb/usr/libexec/VirtualMac/install",
+        @"/var/jb/usr/libexec/VirtualMac/install/install-launcher",
+        @"/var/jb/usr/libexec/VirtualMac/install/start-install.sh",
+        // Pre-1.2.4 locations. This release reclaims the old runtime and
+        // migrates the old library, but a name that collided during the move
+        // is left behind, so report both rather than let anything go unseen.
+        @"/var/root/VirtualMac", @"/var/mobile/Media/VirtualMac"];
     for (NSString *path in paths)
         VZAppendPathStatus(report, path);
     NSString *rootHideRoot = VZRootHideJailbreakRootPath();
@@ -119,12 +123,12 @@ static NSData *VZInstallerPreflightData(void)
     }
 
     struct statfs fileSystem = {0};
-    if (statfs("/var/root", &fileSystem) == 0) {
-        [report appendFormat:@"/var/root filesystem=%s flags=0x%lx\n",
+    if (statfs("/var/jb", &fileSystem) == 0) {
+        [report appendFormat:@"/var/jb filesystem=%s flags=0x%lx\n",
             fileSystem.f_fstypename, (unsigned long)fileSystem.f_flags];
     } else {
         int error = errno;
-        [report appendFormat:@"/var/root statfs-error=%d (%s)\n",
+        [report appendFormat:@"/var/jb statfs-error=%d (%s)\n",
                              error, strerror(error)];
     }
 
@@ -142,7 +146,7 @@ static NSData *VZInstallerPreflightData(void)
     posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDERR_FILENO);
     posix_spawn_file_actions_addclose(&actions, descriptors[1]);
     const char *launcher =
-        "/var/root/VirtualMac/install/install-launcher";
+        "/var/jb/usr/libexec/VirtualMac/install/install-launcher";
     // A spawn error diagnoses the parent-directory/execute-permission failure
     // that prevents the launcher from running at all. Output from the
     // diagnostics-only mode covers the later privilege/script boundary.
@@ -392,7 +396,8 @@ static NSData *VZStorageData(void)
 {
     NSMutableString *report = [NSMutableString string];
     NSArray *paths = @[@"/var", @"/var/mobile", VZDiagnosticsLibraryPath(),
-        @"/var/root", @"/var/root/VirtualMac"];
+        @"/var/jb", @"/var/jb/usr/libexec/VirtualMac",
+        @"/var/root/VirtualMac", @"/var/mobile/Media/VirtualMac"];
     for (NSString *path in paths) {
         VZAppendPathStatus(report, path);
         struct statfs fileSystem = {0};
@@ -455,15 +460,18 @@ static NSData *VZRuntimePathData(void)
         @"/Applications/VirtualMac.app/VirtualMac",
         @"/var/jb/Applications/VirtualMac.app",
         @"/var/jb/Applications/VirtualMac.app/VirtualMac",
+        @"/var/jb/usr/libexec/VirtualMac",
+        @"/var/jb/usr/libexec/VirtualMac/install",
+        @"/var/jb/usr/libexec/VirtualMac/payload",
+        @"/var/jb/usr/libexec/InternetSharing",
+        @"/var/jb/usr/libexec/InternetSharing.ipados14",
+        @"/var/jb/usr/libexec/bootpd",
+        @"/var/jb/Library/LaunchDaemons/com.apple.NetworkSharing.plist",
+        @"/var/jb/Library/LaunchDaemons/com.apple.bootpd.plist",
+        @"/var/jb/Library/LaunchDaemons/vzi.apple.bootpd-controller.plist",
+        // Pre-1.2.4 locations, reported so a stranded tree stays visible.
         @"/var/root/VirtualMac",
-        @"/var/root/VirtualMac/install",
-        @"/var/root/VirtualMac/payload",
-        @"/usr/libexec/VirtualMac/InternetSharing",
-        @"/usr/libexec/VirtualMac/InternetSharing.ipados14",
-        @"/usr/libexec/VirtualMac/bootpd",
-        @"/var/root/VirtualMac/rootful/Library/LaunchDaemons/com.apple.NetworkSharing.plist",
-        @"/var/root/VirtualMac/rootful/Library/LaunchDaemons/com.apple.bootpd.plist",
-        @"/var/root/VirtualMac/rootful/Library/LaunchDaemons/vzi.apple.bootpd-controller.plist",
+        @"/var/mobile/Media/VirtualMac",
         @"/tmp/bootpd.plist",
         @"/var/db/dhcpd_leases",
         @"/Library/MobileSubstrate/DynamicLibraries/VZKeyboardPassthrough.dylib",
@@ -732,7 +740,7 @@ static void VZEnumerateDiagnosticEntries(VZDiagnosticEntryHandler handler)
 
 NSURL *VZCreateDiagnosticsArchive(NSError **error)
 {
-    NSString *directory = [@"/var/mobile/Media/VirtualMac"
+    NSString *directory = [@"/var/jb/var/mobile/VirtualMac"
         stringByAppendingPathComponent:@"Diagnostics"];
     if (![NSFileManager.defaultManager createDirectoryAtPath:directory
         withIntermediateDirectories:YES attributes:nil error:error])

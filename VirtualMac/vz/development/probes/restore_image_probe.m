@@ -34,7 +34,7 @@ int main(int argc, const char *argv[])
                class_getName(class_getSuperclass([NSView class])),
                class_getInstanceSize([NSView class]));
 
-        NSString *root = @"/var/root/VirtualMac";
+        NSString *root = @"/var/jb/usr/libexec/VirtualMac";
         NSString *installer = [root stringByAppendingPathComponent:
             @"payload/Installation.xpc/Contents/MacOS/"
              "com.apple.Virtualization.Installation"];

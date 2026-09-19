@@ -103,8 +103,8 @@ tone_hash="$(ldid -h "$PROBE_ROOT/audio-tone-probe" |
     "$PROBE_ROOT/window-list-probe" \
     "$GUEST_USER@127.0.0.1:$REMOTE_ROOT/"
 ipad_scp "$PROBE_ROOT/audio-tone-probe" \
-    "$IPAD_TARGET:/var/root/VirtualMac/audio-tone-probe"
-ipad_ssh "chmod 755 /var/root/VirtualMac/audio-tone-probe; \
+    "$IPAD_TARGET:/var/jb/usr/libexec/VirtualMac/audio-tone-probe"
+ipad_ssh "chmod 755 /var/jb/usr/libexec/VirtualMac/audio-tone-probe; \
     jbctl trustcache add '$tone_hash'"
 
 "${guest_ssh[@]}" "set -eu
@@ -144,7 +144,7 @@ done
 # The guest beep exercises its virtual output stream. The iPad tone then gives
 # the physical microphone a deterministic signal for the guest input stream.
 "${guest_ssh[@]}" "osascript -e 'set volume output volume 75' -e 'beep 5'"
-ipad_ssh "/var/root/VirtualMac/audio-tone-probe 3"
+ipad_ssh "/var/jb/usr/libexec/VirtualMac/audio-tone-probe 3"
 sleep 3
 
 result="$("${guest_ssh[@]}" 'cat /tmp/vz-audio-capture-result.txt')"

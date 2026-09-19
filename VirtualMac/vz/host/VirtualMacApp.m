@@ -3806,7 +3806,7 @@ static void VZWriteInstallationAttempt(NSString *attemptPath, NSString *state,
     NSString *memory = [@(restoreMemorySize) stringValue];
     NSString *storage = [options[@"StorageSize"] stringValue];
     const char *launcher =
-        "/var/root/VirtualMac/install/install-launcher";
+        "/var/jb/usr/libexec/VirtualMac/install/install-launcher";
     char *arguments[] = {
         (char *)launcher,
         (char *)url.path.fileSystemRepresentation,
@@ -3908,7 +3908,7 @@ static void VZWriteInstallationAttempt(NSString *attemptPath, NSString *state,
             [self.installationTimer invalidate];
             self.installationTimer = nil;
             NSString *pid = [NSString stringWithFormat:@"%d", self.installationProcess];
-            const char *cancelLauncher = "/var/root/VirtualMac/install/install-launcher";
+            const char *cancelLauncher = "/var/jb/usr/libexec/VirtualMac/install/install-launcher";
             char *cancelArguments[] = {(char *)cancelLauncher, "--cancel-install",
                 (char *)pid.UTF8String,
                 (char *)self.installationAttemptPath.fileSystemRepresentation, NULL};
@@ -4531,10 +4531,10 @@ static BOOL loadExtractedFrameworks(void) {
            [hookPath fileSystemRepresentation]);
 
     const char *images[] = {
-        "/var/root/VirtualMac/payload/Frameworks/vmnet.framework/vmnet",
-        "/var/root/VirtualMac/payload/Frameworks/Hypervisor.framework/Hypervisor",
-        "/var/root/VirtualMac/payload/Frameworks/ParavirtualizedGraphics.framework/ParavirtualizedGraphics",
-        "/var/root/VirtualMac/payload/Frameworks/Virtualization.framework/Virtualization",
+        "/var/jb/usr/libexec/VirtualMac/payload/Frameworks/vmnet.framework/vmnet",
+        "/var/jb/usr/libexec/VirtualMac/payload/Frameworks/Hypervisor.framework/Hypervisor",
+        "/var/jb/usr/libexec/VirtualMac/payload/Frameworks/ParavirtualizedGraphics.framework/ParavirtualizedGraphics",
+        "/var/jb/usr/libexec/VirtualMac/payload/Frameworks/Virtualization.framework/Virtualization",
     };
     for (NSUInteger i = 0; i < sizeof(images) / sizeof(images[0]); i++) {
         if (!dlopen(images[i], RTLD_NOW | RTLD_GLOBAL)) {
@@ -5169,10 +5169,10 @@ static void startVirtualMachineWorker(UIView *container, id delegate,
     unlink("/tmp/vmmhook.log");
     unlink("/tmp/vmm.stderr.log");
     setenv("VZ_VMM_BIN",
-           "/var/root/VirtualMac/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine",
+           "/var/jb/usr/libexec/VirtualMac/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine",
            1);
     setenv("VZ_AVP_BOOTER",
-           "/var/root/VirtualMac/payload/Frameworks/Virtualization.framework/Resources/AVPBooter.vmapple2.bin",
+           "/var/jb/usr/libexec/VirtualMac/payload/Frameworks/Virtualization.framework/Resources/AVPBooter.vmapple2.bin",
            1);
     // Consume the one-shot mode at the actual boot boundary. The current boot
     // keeps the captured value while Settings immediately returns to Off.
@@ -5836,7 +5836,7 @@ static void disconnectExternalDisplay(void) {
             // can request one real UIKit installation after launching the app.
             // The normal library, visible progress alert, polling timer, and
             // completion handling are all used; this is not a headless helper.
-            NSString *requestPath = [VZVMSupportPath()
+            NSString *requestPath = [VZVMLibraryPath()
                 stringByAppendingPathComponent:@".visible-install-request"];
             NSString *request = [NSString
                 stringWithContentsOfFile:requestPath

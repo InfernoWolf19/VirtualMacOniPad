@@ -1,16 +1,33 @@
 #!/bin/sh
 
+# Virtual Mac installs into the jailbreak prefix and nowhere else, so that
+# removing the package, or removing the jailbreak, removes all of it. The
+# layout is declared once below; nothing in this script writes above $prefix
+# except /var/db/dhcpd_leases, which Apple's bootpd has compiled in.
+
 set -eu
 export PATH=/var/jb/usr/bin:/var/jb/usr/sbin:/var/jb/bin:/var/jb/sbin:/usr/bin:/bin:/usr/sbin:/sbin
 
-runtime=/var/root/VirtualMac
+prefix=/var/jb
+runtime=$prefix/usr/libexec/VirtualMac
+library=$prefix/var/mobile/VirtualMac
+app=$prefix/Applications/VirtualMac.app
 tweak_payload=$runtime/bootstrap-common/usr/lib/TweakInject
-library=/var/mobile/Media/VirtualMac
-support=$library
+tweak_dir=$prefix/usr/lib/TweakInject
+helper_bin_dir=$prefix/usr/libexec
+helper_lib_dir=$prefix/usr/lib
+launch_daemons=$prefix/Library/LaunchDaemons
+launchctl=$prefix/usr/bin/launchctl
+uicache=$prefix/usr/bin/uicache
+jbctl=$prefix/usr/bin/jbctl
+
+# Releases up to 1.2.3 kept the runtime and the library outside the prefix.
+legacy_library=/var/mobile/Media/VirtualMac
+
 host_version="$(sw_vers -productVersion)"
 objc_class_data_auth=0
 # iPadOS changed Objective-C class-data authentication during iPadOS 15.
-# Detect the actual libobjc implementation: the newer runtime's safe_ro helper is present 
+# Detect the actual libobjc implementation: the newer runtime's safe_ro helper is present
 # in the system cache's local-symbol companion beginning with 15.4, while 15.3.1 and earlier lack it.
 case "$host_version" in
     15.*)
@@ -21,14 +38,21 @@ case "$host_version" in
         fi
         ;;
 esac
-prefix=/var/jb
-rootless=1
-jbctl=/var/jb/usr/bin/jbctl
 
-# Taurine caches code-signing state on the vnode. Overwriting an already
-# executed Mach-O in place can leave the old validation attached to the new
-# bytes and produce EAUTH until an on-device signer rewrites it. Install every
-# selected/copied executable and dylib through a new inode instead.
+# This package is rootless-only. A rootful bootstrap has no /var/jb, so there
+# is nowhere to install that the package could also clean up again; refuse
+# rather than scatter files across the system.
+test -x "$jbctl" || jbctl=$prefix/basebin/jbctl
+if test ! -x "$jbctl"; then
+    echo "Virtual Mac requires a rootless jailbreak that provides jbctl." >&2
+    echo "No bootstrap was found at $prefix; refusing to install." >&2
+    exit 1
+fi
+
+# iOS caches code-signing state on the vnode. Overwriting an already executed
+# Mach-O in place can leave the old validation attached to the new bytes and
+# produce EAUTH until a signer rewrites it. Install every selected/copied
+# executable and dylib through a new inode instead.
 replace_file() {
     replace_source="$1"
     replace_destination="$2"
@@ -38,79 +62,9 @@ replace_file() {
     mv -f "$replace_temporary" "$replace_destination"
 }
 
-test -x "$jbctl" || jbctl=/var/jb/basebin/jbctl
-if test ! -x "$jbctl"; then
-    # Taurine is rootful. The framework runtime already lives at the common
-    # /var/root path; install only the bootstrap-specific app and helpers.
-    rootless=0
-    prefix=
-    rootful_payload="$runtime/bootstrap-rootful"
-    universal_payload=/var/jb
-    test -d "$universal_payload/Applications/VirtualMac.app"
-    test -x "$rootful_payload/usr/libexec/VirtualMac/InternetSharing.ipados14"
-    # Replace the app bundle as a unit so resources removed by an update do
-    # not survive indefinitely on a rootful device.
-    rm -rf /Applications/VirtualMac.app
-    cp -R "$universal_payload/Applications/VirtualMac.app" /Applications/
-    replace_file \
-        "$universal_payload/Applications/VirtualMac.app/VirtualMac" \
-        /Applications/VirtualMac.app/VirtualMac
-    replace_file \
-        "$universal_payload/Applications/VirtualMac.app/VZHostCompat.dylib" \
-        /Applications/VirtualMac.app/VZHostCompat.dylib
-    mkdir -p /usr/bin
-    replace_file "$universal_payload/usr/bin/virtualmac-diagnostics" \
-        /usr/bin/virtualmac-diagnostics
-    mkdir -p /usr/lib/VirtualMac /usr/libexec/VirtualMac \
-        /usr/sbin/VirtualMac
-    for source_file in \
-        "$universal_payload/usr/lib/libmrc.dylib" \
-        "$universal_payload/usr/lib/AuthorizationCompat.dylib" \
-        "$universal_payload/usr/lib/NetworkMemoryPolicy.dylib" \
-        "$universal_payload/usr/lib/OpenDirectoryCompat.dylib" \
-        "$universal_payload/usr/lib/IOKit14Compat.dylib"; do
-        replace_file "$source_file" "/usr/lib/VirtualMac/${source_file##*/}"
-    done
-    for source_file in "$rootful_payload/usr/libexec/VirtualMac/"*; do
-        replace_file "$source_file" "/usr/libexec/VirtualMac/${source_file##*/}"
-    done
-    # The package retains an explicit iPadOS 14 source variant, while the
-    # launch daemon deliberately uses one stable runtime path. A clean
-    # Taurine installation has no pre-existing unsuffixed file, so select the
-    # variant here rather than relying on a leftover from development or an
-    # older package.
-    replace_file \
-        "$rootful_payload/usr/libexec/VirtualMac/InternetSharing.ipados14" \
-        /usr/libexec/VirtualMac/InternetSharing
-    replace_file "$universal_payload/usr/sbin/rtadvd" \
-        /usr/sbin/VirtualMac/rtadvd
-
-    # Releases before 1.1 staged a second copy of these shared files below the
-    # rootful bootstrap directory. They are no longer package payload; remove
-    # only those exact legacy paths after their replacements are installed.
-    rm -rf \
-        "$rootful_payload/Applications" \
-        "$rootful_payload/Library" \
-        "$rootful_payload/usr/bin" \
-        "$rootful_payload/usr/lib" \
-        "$rootful_payload/usr/sbin"
-    rm -f \
-        "$rootful_payload/usr/libexec/InternetSharing" \
-        "$rootful_payload/usr/libexec/InternetSharing.ipados14" \
-        "$rootful_payload/usr/libexec/InternetSharing.ipados15" \
-        "$rootful_payload/usr/libexec/InternetSharing.ipados16"
-fi
-app="$prefix/Applications/VirtualMac.app"
-launchctl="$prefix/usr/bin/launchctl"
-uicache="$prefix/usr/bin/uicache"
-helper_bin_dir="$prefix/usr/libexec"
-helper_lib_dir="$prefix/usr/lib"
-launch_daemons="$prefix/Library/LaunchDaemons"
-
 # Install this only after dpkg has removed paths owned by 1.0. The former
 # MobileSubstrate path can be a symlink to this canonical directory, so
 # unpacking the new file before obsolete-file cleanup is not upgrade-safe.
-tweak_dir="$prefix/usr/lib/TweakInject"
 mkdir -p "$tweak_dir"
 replace_file "$tweak_payload/VZKeyboardPassthrough.dylib" \
     "$tweak_dir/VZKeyboardPassthrough.dylib"
@@ -119,11 +73,6 @@ cp "$tweak_payload/VZKeyboardPassthrough.plist" \
 chmod 644 "$tweak_dir/VZKeyboardPassthrough.plist.virtualmac-new"
 mv -f "$tweak_dir/VZKeyboardPassthrough.plist.virtualmac-new" \
     "$tweak_dir/VZKeyboardPassthrough.plist"
-if test "$rootless" = 0; then
-    helper_bin_dir=/usr/libexec/VirtualMac
-    helper_lib_dir=/usr/lib/VirtualMac
-    launch_daemons="$runtime/rootful/Library/LaunchDaemons"
-fi
 
 chmod 755 "$app/VirtualMac" "$app/VZHostCompat.dylib"
 
@@ -258,63 +207,52 @@ chmod 755 \
 chown root:wheel "$runtime/install/install-launcher"
 chmod 4755 "$runtime/install/install-launcher"
 
-mkdir -p "$library" "$support/Restore Images" "$support/Installations"
-chown mobile:mobile "$library" "$support" \
-    "$support/Restore Images" "$support/Installations"
-chmod 755 "$library" "$support" \
-    "$support/Restore Images" "$support/Installations"
+# Bring a library from before 1.2.4 inside the prefix. Both paths are on the
+# data volume, so each entry is a rename: instant, and it needs no free space.
+# A name that already exists on this side is left where it is rather than
+# overwritten, so the migration can never destroy a virtual machine. Run this
+# before the support folders are created, or Restore Images and Installations
+# would collide with themselves and be left behind.
+if test -d "$legacy_library"; then
+    mkdir -p "$library"
+    for entry in "$legacy_library"/* "$legacy_library"/.[!.]*; do
+        test -e "$entry" || continue
+        name="${entry##*/}"
+        if test -e "$library/$name"; then
+            echo "Virtual Mac: keeping $entry; $library/$name already exists" >&2
+            continue
+        fi
+        mv -f "$entry" "$library/$name" ||
+            echo "Virtual Mac: could not move $entry" >&2
+    done
+    # Succeeds only once everything has moved, so a partial migration leaves
+    # the old folder in place with its remaining contents intact.
+    rmdir "$legacy_library" 2>/dev/null || true
+fi
 
+mkdir -p "$library" "$library/Restore Images" "$library/Installations"
+chown mobile:mobile "$library" \
+    "$library/Restore Images" "$library/Installations"
+chmod 755 "$library" \
+    "$library/Restore Images" "$library/Installations"
+# Migrated machines already belong to mobile, but one restored from a backup
+# may not, and the app runs as mobile.
+chown -R mobile:mobile "$library" 2>/dev/null || true
+
+# The only path this package touches above the prefix. Apple's bootpd has its
+# lease database compiled in and cannot be pointed inside; postrm deletes it.
 mkdir -p /var/db
 touch /var/db/dhcpd_leases
 chown root:wheel /var/db/dhcpd_leases
 chmod 644 /var/db/dhcpd_leases
 
-if test "$rootless" = 1; then
-    while IFS="$(printf '\t')" read -r hash file; do
-        test -n "$hash"
-        test -f "$file"
-        "$jbctl" trustcache add "$hash"
-    done <"$prefix/usr/share/VirtualMac/trustcache.txt"
-elif test -x /taurine/jbexec; then
-    # Taurine's amfid bypass validates ad-hoc signatures, but privileged
-    # platform binaries must also be preflighted with jailbreakd.  Otherwise
-    # their CDHashes are accepted only after an LLDB launch and disappear on
-    # the next respring, making the app look like it crashes before dyld.
-    #
-    # The package manifest uses rootless /var/jb paths. Map those entries to
-    # their rootful install locations; runtime files already use /var/root.
-    while IFS="$(printf '\t')" read -r hash file; do
-        target="$file"
-        case "$target" in
-            /var/jb/*) target="/${target#/var/jb/}" ;;
-        esac
-        test -f "$target" || continue
-        # jbexec registers the file before it performs a diagnostic spawn.
-        # Dylibs and XPC executables can report EPERM from that final spawn
-        # even though preflight succeeded, so do not fail package setup on its
-        # diagnostic exit status.
-        PREFLIGHT=1 /bin/bash -c \
-            'exec -a "$1" /taurine/jbexec' _ "$target" >/dev/null || true
-    done </var/jb/usr/share/VirtualMac/trustcache.txt
-    # Files copied from the universal bootstrap payload have path-dependent
-    # Taurine trust. Preflight every final package-owned rootful Mach-O after
-    # the copy; preflighting only its /var/root staging source is insufficient.
-    for target in \
-        /usr/libexec/VirtualMac/InternetSharing \
-        /usr/libexec/VirtualMac/InternetSharing.ipados14 \
-        /usr/libexec/VirtualMac/bootpd \
-        /usr/lib/VirtualMac/AuthorizationCompat.dylib \
-        /usr/lib/VirtualMac/NetworkMemoryPolicy.dylib \
-        /usr/lib/VirtualMac/libmrc.dylib \
-        /usr/lib/VirtualMac/OpenDirectoryCompat.dylib \
-        /usr/lib/VirtualMac/IOKit14Compat.dylib \
-        /usr/sbin/VirtualMac/rtadvd \
-        /usr/lib/TweakInject/VZKeyboardPassthrough.dylib; do
-        test -f "$target" || continue
-        PREFLIGHT=1 /bin/bash -c \
-            'exec -a "$1" /taurine/jbexec' _ "$target" >/dev/null || true
-    done
-fi
+# Dopamine keys its trust cache on the CDHash rather than the path, so the
+# manifest generated at build time stays valid wherever the prefix is mounted.
+while IFS="$(printf '\t')" read -r hash file; do
+    test -n "$hash"
+    test -f "$file"
+    "$jbctl" trustcache add "$hash"
+done <"$prefix/usr/share/VirtualMac/trustcache.txt"
 
 for domain in system user/501; do
     "$launchctl" bootout "$domain/vzi.apple.bootpd-controller" 2>/dev/null || true
@@ -326,9 +264,7 @@ done
 # hosts (both jobs already declare UserName=root).
 network_domain=user/501
 case "$host_version" in
-    14.*)
-        network_domain=system
-        ;;
+    14.*) network_domain=system ;;
     15.*) network_domain=system ;;
 esac
 if test "$host_version" != "${host_version#14.}"; then
@@ -359,6 +295,11 @@ else
 fi
 
 "$uicache" -p "$app"
+
+# dpkg's obsolete-directory pass has finished, so the marker preinst used to
+# protect root's home is no longer needed. With it gone, nothing this package
+# created remains under /var/root.
+rm -f /var/root/.virtualmac-preserve-root 2>/dev/null || true
 
 # Sileo passes its result descriptor and protocol version through $CYDIA.
 # Stdout is only a log stream and does not create a Restart SpringBoard action.

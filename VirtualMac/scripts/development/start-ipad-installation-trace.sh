@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/common.sh
 source "$SCRIPT_DIR/../lib/common.sh"
 
-REMOTE="${VZ_IPAD_WORK:-/var/root/VirtualMac}"
+REMOTE="${VZ_IPAD_WORK:-/var/jb/usr/libexec/VirtualMac}"
 COMMANDS="$VZ_REPO_ROOT/vz/development/lldb/trace_installation_restore.lldb"
 need_file "$COMMANDS"
 ensure_ipad_usb

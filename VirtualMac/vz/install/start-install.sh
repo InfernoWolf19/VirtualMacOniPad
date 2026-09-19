@@ -20,7 +20,7 @@ if [ "$#" -ne 7 ]; then
     exit 2
 fi
 
-remote=/var/root/VirtualMac
+remote=/var/jb/usr/libexec/VirtualMac
 host_version=$(sw_vers -productVersion)
 ipsw=$1
 staging=$2
@@ -37,11 +37,11 @@ test ! -e "$staging"
 test ! -e "$final"
 echo "INSTALL_PREPARE_BEGIN ipsw=$ipsw"
 case "$staging" in
-    /var/mobile/Media/VirtualMac/Installations/*.bundle.installing) ;;
+    /var/jb/var/mobile/VirtualMac/Installations/*.bundle.installing) ;;
     *) echo "staging bundle must be in Virtual Mac installation storage" >&2; exit 2 ;;
 esac
-test "${final%/*}" = /var/mobile/Media/VirtualMac || {
-    echo "final bundle must be directly in /var/mobile/Media/VirtualMac" >&2
+test "${final%/*}" = /var/jb/var/mobile/VirtualMac || {
+    echo "final bundle must be directly in /var/jb/var/mobile/VirtualMac" >&2
     exit 2
 }
 

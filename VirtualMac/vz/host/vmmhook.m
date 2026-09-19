@@ -3023,7 +3023,7 @@ static int vmm_open(const char *path, int oflag, ...) {
                 snprintf(fb, sizeof(fb), "%s", configured);
             else
                 snprintf(fb, sizeof(fb),
-                         "/var/root/VirtualMac/payload/%s", base);
+                         "/var/jb/usr/libexec/VirtualMac/payload/%s", base);
             int fd = __open(fb, oflag, mode);
             void *ret0 = __builtin_return_address(0);
             void *ret1 = __builtin_return_address(1);

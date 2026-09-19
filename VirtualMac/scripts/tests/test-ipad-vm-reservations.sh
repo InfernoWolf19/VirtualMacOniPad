@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/../lib/common.sh"
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 OUT="$VZ_BUILD_ROOT/vm-reserve-probe"
 BIN="$OUT/vm-reserve-probe"
-REMOTE="${VZ_IPAD_WORK:-/var/root/VirtualMac}/vm-reserve-probe"
+REMOTE="${VZ_IPAD_WORK:-/var/jb/usr/libexec/VirtualMac}/vm-reserve-probe"
 
 need_command ldid
 need_command xcrun

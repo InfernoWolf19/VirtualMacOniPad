@@ -310,7 +310,7 @@
 "Wi-Fi" = "Wi-Fi";
 "Width" = "寬度";
 "Window Size" = "視窗大小";
-"You can also copy an existing Virtual Mac bundle to /var/mobile/Media/VirtualMac using an app such as iMazing or Filza." = "你也可以使用iMazing或Filza等app，將現有虛擬Mac包複製到/var/mobile/Media/VirtualMac。";
+"You can also copy an existing Virtual Mac bundle to /var/jb/var/mobile/VirtualMac using an app such as iMazing or Filza." = "你也可以使用iMazing或Filza等app，將現有虛擬Mac包複製到/var/jb/var/mobile/VirtualMac。";
 "You can assign between %llu and %llu GB of memory to this Virtual Mac, with %llu GB as the recommendation. The remaining memory is used for graphics processing and iOS.\n\nMaxing out memory assignment does not guarantee improved performance in Virtual Mac, and may degrade graphics performance and system stability." = "你可以為此虛擬Mac分配%llu至%lluGB記憶體，建議分配%lluGB。其餘記憶體將用於圖像處理和iOS。\n\n將記憶體分配至上限並不一定能提升虛擬Mac的效能，反而可能降低圖像效能和系統穩定性。";
 "You can assign between %llu and %llu GB of memory to this Virtual Mac, with %llu GB as the recommendation. The remaining memory is used for graphics processing and iPadOS.\n\nMaxing out memory assignment does not guarantee improved performance in Virtual Mac, and may degrade graphics performance and system stability." = "你可以為此虛擬Mac分配%llu至%lluGB記憶體，建議分配%lluGB。其餘記憶體將用於圖像處理和iPadOS。\n\n將記憶體分配至上限並不一定能提升虛擬Mac的效能，反而可能降低圖像效能和系統穩定性。";
 "You can assign between %llu and %llu processor cores to this Virtual Mac, with %lu processor cores as the recommendation.\n\nMaxing out processor core assignment does not guarantee improved performance in Virtual Mac, as iOS also needs processor power to coordinate underlying tasks." = "你可以為此虛擬Mac分配%llu至%llu個處理器核心，建議分配%lu個。\n\n將處理器核心數設為上限並不一定能提升虛擬Mac的效能，因為iOS也需要處理器資源來處理系統工作。";
