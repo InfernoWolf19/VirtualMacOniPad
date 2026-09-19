@@ -48,6 +48,22 @@ Virtual Mac on iPad uses hardware CPU virtualization and supports paravirtualize
 
 With the latest update, Virtual Mac on iPad also goes beyond what VirtualBuddy and UTM offers, being first to ever support Final Cut Pro and OpenGL/OpenCL acceleration [through modified GLDRendererMetal](VirtualMac/vz/guest/OpenGLPVGCompat.m) in virtualized environments.
 
+### Can I keep Virtual Macs on an external drive?
+
+Yes, for storage. Connect a drive that appears in the Files app (APFS is recommended, because other formats store every disk image at its full size), then open Settings > Storage > External Drive Library and choose the drive. Virtual Mac creates a `VirtualMac` folder on it. Long-press a Virtual Mac, choose "Move…" and pick the drive: the bundle is copied, every file is verified against the original, and only then is the original deleted. Moving back is the same action in reverse.
+
+**Do not run a Virtual Mac from an external drive.** Every external volume on iPadOS is served by a userspace filesystem daemon, and Virtualization.framework does low-level direct disk access against the image. Doing that across a userspace filesystem has crashed a device hard enough to end the jailbreak. Use the drive to park Virtual Macs you are not using, and move one back to internal storage before starting it.
+
+New Virtual Macs are always installed on internal storage first and moved afterwards. If the drive is not connected, its Virtual Macs are hidden from the library until you reconnect it and pull down to refresh.
+
+A drive is also the only copy that outlives Virtual Mac itself. Internal storage is inside the jailbreak prefix, so uninstalling the package or removing the jailbreak deletes what is there; a drive is not, so it is untouched by both.
+
+### Why does iPadOS count my Virtual Macs as "Other System Data"?
+
+Because iPadOS builds that screen from app *containers*, and a jailbreak package does not install into one. Virtual Macs live inside the jailbreak prefix, which belongs to no bundle identifier, so Settings has nothing to attribute the space to and files it under System Data. There is no way to change that while Virtual Mac is installed as a jailbreak package.
+
+What you get instead is that the space is always reclaimable. Settings > Storage has "Delete All Virtual Machines", which removes every Virtual Mac on internal storage together with its leftover installation files, shows the count before you confirm, and leaves anything on an external drive alone. "Delete Cached IPSW" and "Delete Temporary Installation Files" do the same for a failed or cancelled install, which keeps a half-written disk image several gigabytes in size.
+
 ### Where does Virtual Mac put its files, and what does uninstalling remove?
 
 Everything, inside the jailbreak prefix:

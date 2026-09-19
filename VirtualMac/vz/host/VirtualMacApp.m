@@ -9,6 +9,7 @@
 #import "VZVMLibraryViewController.h"
 #import "VZAppSettings.h"
 #import "VZDiagnostics.h"
+#import "VZExternalLibrary.h"
 #import "VZFailureDetailsViewController.h"
 #import "VZProgressViewController.h"
 #import "VZSettingsViewController.h"
@@ -3683,6 +3684,21 @@ static void VZWriteInstallationAttempt(NSString *attemptPath, NSString *state,
         [self presentViewController:running animated:YES completion:nil];
         return;
     }
+    // A bundle on an external drive can vanish between the library scan and
+    // this tap. Refuse early instead of handing VZ a missing Disk.img.
+    if (!VZBundleVolumeIsAvailable(path) || !VZIsValidVMBundle(path)) {
+        UIAlertController *missing = [UIAlertController
+            alertControllerWithTitle:VZL(@"External Drive Not Connected")
+            message:[NSString stringWithFormat:
+                VZL(@"Connect the drive that contains “%@”, then pull down to refresh the library."),
+                path.lastPathComponent.stringByDeletingPathExtension]
+            preferredStyle:UIAlertControllerStyleAlert];
+        [missing addAction:[UIAlertAction actionWithTitle:VZL(@"OK")
+            style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:missing animated:YES completion:nil];
+        [library reloadLibrary];
+        return;
+    }
     if (VZIsRootHideEnvironment() && !gRootHidePivotalActionApproved) {
         VZContinueAfterRootHideInformation(self, ^{
             gRootHidePivotalActionApproved = YES;
@@ -3773,6 +3789,9 @@ static void VZWriteInstallationAttempt(NSString *attemptPath, NSString *state,
         return;
     }
     url = persistentURL;
+    // The setuid installer only accepts a final bundle that is a direct child
+    // of the support folder. That check is the security boundary for a
+    // root-privileged writer, so the install always lands there.
     NSString *bundlePath = [VZVMLibraryPath() stringByAppendingPathComponent:
         [name stringByAppendingPathExtension:@"bundle"]];
     NSString *attempt = [NSString stringWithFormat:@"%@-%@", name,
@@ -3951,6 +3970,9 @@ static void VZWriteInstallationAttempt(NSString *attemptPath, NSString *state,
                 @{@"CompletedAt": NSDate.date});
             if ([VZAppSettings.sharedSettings boolForKey:VZAutoDeleteRestoreImageKey])
                 VZRemovePaths(@[self.installationRestoreImagePath]);
+            // The installer writes straight into the internal library, which
+            // is also the only place the setuid launcher will write, so a
+            // finished bundle needs no further relocation.
             NSString *installedPath = [[self.installationBundlePath copy] autorelease];
             self.installationController.cancellationHandler = nil;
             [self.installationController.navigationController dismissViewControllerAnimated:YES completion:^{
@@ -5793,7 +5815,15 @@ static void disconnectExternalDisplay(void) {
                 NSCharacterSet.whitespaceAndNewlineCharacterSet];
         NSString *persistentAutoBoot = [VZAppSettings.sharedSettings
             stringForKey:VZAutoBootVMPathKey];
-        if (persistentAutoBoot.length && !VZIsValidVMBundle(persistentAutoBoot)) {
+        if (persistentAutoBoot.length &&
+            !VZBundleVolumeIsAvailable(persistentAutoBoot)) {
+            // The auto-boot VM lives on an external drive that is not
+            // connected. Keep the setting and show the library instead of
+            // treating the VM as deleted.
+            printf("[VirtualMac] auto boot VM drive not connected path=%s\n",
+                   persistentAutoBoot.UTF8String);
+            persistentAutoBoot = nil;
+        } else if (persistentAutoBoot.length && !VZIsValidVMBundle(persistentAutoBoot)) {
             NSString *identifier = [VZAppSettings.sharedSettings
                 stringForKey:VZAutoBootVMIdentifierKey];
             persistentAutoBoot = nil;

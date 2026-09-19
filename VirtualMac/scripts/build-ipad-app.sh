@@ -28,6 +28,7 @@ done
 need_file "$VZ_REPO_ROOT/vz/host/NSViewShim.m"
 need_file "$VZ_REPO_ROOT/vz/host/VZAppSettings.m"
 need_file "$VZ_REPO_ROOT/vz/host/VZDiagnostics.m"
+need_file "$VZ_REPO_ROOT/vz/host/VZExternalLibrary.m"
 need_file "$VZ_REPO_ROOT/vz/host/VZFailureDetailsViewController.m"
 need_file "$VZ_REPO_ROOT/vz/host/VZRestoreCatalog.m"
 need_file "$VZ_REPO_ROOT/vz/host/VZSupport.m"
@@ -112,6 +113,7 @@ xcrun --sdk iphoneos clang \
     "$VZ_REPO_ROOT/vz/host/NSViewShim.m" \
     "$VZ_REPO_ROOT/vz/host/VZAppSettings.m" \
     "$VZ_REPO_ROOT/vz/host/VZDiagnostics.m" \
+    "$VZ_REPO_ROOT/vz/host/VZExternalLibrary.m" \
     "$VZ_REPO_ROOT/vz/host/VZFailureDetailsViewController.m" \
     "$VZ_REPO_ROOT/vz/host/VZRestoreCatalog.m" \
     "$VZ_REPO_ROOT/vz/host/VZSupport.m" \

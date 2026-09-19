@@ -1,5 +1,6 @@
 #import "VZVMLibraryViewController.h"
 #import "VZAppSettings.h"
+#import "VZExternalLibrary.h"
 #import "VZSettingsViewController.h"
 #import "VZNewVMViewController.h"
 #import "VZProgressViewController.h"
@@ -15,6 +16,7 @@
 #include <limits.h>
 #include <spawn.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
 
@@ -124,6 +126,93 @@ static uint64_t GiB(uint64_t value)
 NSString *VZVMLibraryPath(void)
 {
     return @"/var/jb/var/mobile/VirtualMac";
+}
+
+// Identifiers are stored only in memory, never on disk, so renaming one here
+// cannot invalidate an existing installation.
+static NSString * const VZLibraryLocationInternal = @"internal";
+static NSString * const VZLibraryLocationExternal = @"external";
+
+static NSString *VZLibraryLocationTitle(NSString *identifier)
+{
+    if ([identifier isEqualToString:VZLibraryLocationExternal])
+        return VZL(@"External Drive");
+    return VZL(@"Internal Storage");
+}
+
+// Every library the app can read right now, in display order.
+static NSArray<NSDictionary *> *VZLibraryLocations(void)
+{
+    NSMutableArray *locations = [NSMutableArray array];
+    [locations addObject:@{@"id": VZLibraryLocationInternal,
+                           @"path": VZVMLibraryPath()}];
+    NSString *external = VZExternalLibraryPath();
+    if (external &&
+        VZExternalLibraryCurrentState() == VZExternalLibraryStateMounted)
+        [locations addObject:@{@"id": VZLibraryLocationExternal,
+                               @"path": external}];
+    return locations;
+}
+
+static BOOL VZPathsShareVolume(NSString *left, NSString *right)
+{
+    struct stat leftInfo, rightInfo;
+    if (stat(left.fileSystemRepresentation, &leftInfo) != 0 ||
+        stat(right.fileSystemRepresentation, &rightInfo) != 0)
+        return NO;
+    return leftInfo.st_dev == rightInfo.st_dev;
+}
+
+NSString *VZMoveBundleWithinVolume(NSString *bundlePath,
+                                   NSString *destinationLibrary,
+                                   NSError **error)
+{
+    NSFileManager *manager = NSFileManager.defaultManager;
+    if (![manager createDirectoryAtPath:destinationLibrary
+            withIntermediateDirectories:YES attributes:nil error:error])
+        return nil;
+    if (!VZPathsShareVolume(bundlePath.stringByDeletingLastPathComponent,
+                            destinationLibrary)) {
+        if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain
+            code:EXDEV userInfo:@{NSLocalizedDescriptionKey:
+                @"The two locations are not on the same volume."}];
+        return nil;
+    }
+    NSString *destination = [destinationLibrary
+        stringByAppendingPathComponent:bundlePath.lastPathComponent];
+    if ([manager fileExistsAtPath:destination]) {
+        if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain
+            code:EEXIST userInfo:@{NSLocalizedDescriptionKey:
+                @"A Virtual Mac with that name is already stored there."}];
+        return nil;
+    }
+    if (rename(bundlePath.fileSystemRepresentation,
+               destination.fileSystemRepresentation) != 0) {
+        if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain
+            code:errno userInfo:@{NSLocalizedDescriptionKey:
+                [NSString stringWithFormat:@"Could not move %@: %s",
+                    bundlePath.lastPathComponent, strerror(errno)]}];
+        return nil;
+    }
+    printf("[VirtualMac] moved %s to %s within one volume\n",
+           bundlePath.UTF8String, destination.UTF8String);
+    return destination;
+}
+
+// Keep every saved reference pointing at a bundle's new home. Paths are
+// compared in standardized form because an external path can be spelled with
+// or without a leading "/private".
+void VZUpdateSavedBundlePath(NSString *oldPath, NSString *newPath)
+{
+    NSString *previous = oldPath.stringByStandardizingPath;
+    VZAppSettings *settings = VZAppSettings.sharedSettings;
+    if ([[settings stringForKey:VZAutoBootVMPathKey].stringByStandardizingPath
+            isEqualToString:previous])
+        [settings setString:newPath forKey:VZAutoBootVMPathKey];
+    if ([[NSUserDefaults.standardUserDefaults stringForKey:@"VZSelectedVMPath"]
+            .stringByStandardizingPath isEqualToString:previous])
+        [NSUserDefaults.standardUserDefaults setObject:newPath
+                                                forKey:@"VZSelectedVMPath"];
 }
 
 NSString *VZRestoreImagesPath(void)
@@ -437,7 +526,10 @@ NSArray<NSDictionary *> *VZDiscoverVirtualMachines(void)
        withIntermediateDirectories:YES attributes:nil error:nil];
     [manager createDirectoryAtPath:VZInstallationsPath()
        withIntermediateDirectories:YES attributes:nil error:nil];
-    NSString *readme = [library stringByAppendingPathComponent:@"README.md"];
+    // The note sits in the library itself, which is the location the
+    // documentation and the app both point people at with a file manager.
+    NSString *readme = [VZVMLibraryPath()
+        stringByAppendingPathComponent:@"README.md"];
     if (![manager fileExistsAtPath:readme]) {
         NSString *text =
             @"# Virtual Mac\n\n"
@@ -450,8 +542,8 @@ NSArray<NSDictionary *> *VZDiscoverVirtualMachines(void)
 
     NSMutableArray *machines = [NSMutableArray array];
     NSMutableSet *seen = [NSMutableSet set];
-    void (^append)(NSString *, NSString *) =
-        ^(NSString *path, NSString *name) {
+    void (^append)(NSString *, NSString *, NSString *) =
+        ^(NSString *path, NSString *name, NSString *location) {
         if (!VZIsValidVMBundle(path))
             return;
         NSString *manifest = [path stringByAppendingPathComponent:
@@ -467,16 +559,21 @@ NSArray<NSDictionary *> *VZDiscoverVirtualMachines(void)
         if ([seen containsObject:identity])
             return;
         [seen addObject:identity];
-        [machines addObject:@{@"name": name, @"path": path}];
+        [machines addObject:@{@"name": name, @"path": path,
+                              @"location": location}];
     };
-    for (NSString *name in [manager contentsOfDirectoryAtPath:library
-                                                        error:nil]) {
-        if ([name.pathExtension caseInsensitiveCompare:@"bundle"] !=
-                NSOrderedSame)
-            continue;
-        NSString *path = [library stringByAppendingPathComponent:name];
-        NSString *display = name.stringByDeletingPathExtension;
-        append(path, display);
+    // VZLibraryLocations() already omits an external drive that is not
+    // mounted, so a stale mount-point folder never produces phantom entries.
+    for (NSDictionary *location in VZLibraryLocations()) {
+        NSString *directory = location[@"path"];
+        for (NSString *name in [manager contentsOfDirectoryAtPath:directory
+                                                            error:nil]) {
+            if ([name.pathExtension caseInsensitiveCompare:@"bundle"] !=
+                    NSOrderedSame)
+                continue;
+            append([directory stringByAppendingPathComponent:name],
+                   name.stringByDeletingPathExtension, location[@"id"]);
+        }
     }
     [machines sortUsingComparator:^NSComparisonResult(NSDictionary *left,
                                                        NSDictionary *right) {
@@ -498,11 +595,23 @@ static BOOL VZVMNameIsOccupied(NSString *name)
     NSString *bundleName = [name stringByAppendingPathExtension:@"bundle"];
     NSString *installingName = [bundleName
         stringByAppendingPathExtension:@"installing"];
-    for (NSString *entry in [NSFileManager.defaultManager
-            contentsOfDirectoryAtPath:VZVMLibraryPath() error:nil]) {
-        if ([entry caseInsensitiveCompare:bundleName] == NSOrderedSame ||
-            [entry caseInsensitiveCompare:installingName] == NSOrderedSame)
-            return YES;
+    // A new Virtual Mac is installed into the shared folder and then adopted
+    // into whichever library is current, so the name has to be free in every
+    // library the app can see. An external drive is included even when it is
+    // not mounted, so a later move cannot collide.
+    NSMutableArray *libraries = [NSMutableArray array];
+    for (NSDictionary *location in VZLibraryLocations())
+        [libraries addObject:location[@"path"]];
+    NSString *external = VZExternalLibraryPath();
+    if (external && ![libraries containsObject:external])
+        [libraries addObject:external];
+    for (NSString *library in libraries) {
+        for (NSString *entry in [NSFileManager.defaultManager
+                contentsOfDirectoryAtPath:library error:nil]) {
+            if ([entry caseInsensitiveCompare:bundleName] == NSOrderedSame ||
+                [entry caseInsensitiveCompare:installingName] == NSOrderedSame)
+                return YES;
+        }
     }
     return NO;
 }
@@ -537,11 +646,15 @@ static NSString *VZUniqueVMNameExcludingPath(NSString *requested,
 {
     NSString *base = VZSanitizedVMName(requested);
     NSString *excluded = excludedPath.stringByStandardizingPath;
+    // Renaming keeps a bundle in the library that already holds it. Checking
+    // the internal library for an external bundle would silently move it.
+    NSString *library = excluded.length
+        ? VZLibraryPathForBundle(excluded) : VZVMLibraryPath();
     for (NSUInteger suffix = 1; suffix < NSUIntegerMax; suffix++) {
         NSString *candidate = suffix == 1 ? base :
             [NSString stringWithFormat:@"%@ %lu", base,
              (unsigned long)suffix];
-        NSString *path = [VZVMLibraryPath() stringByAppendingPathComponent:
+        NSString *path = [library stringByAppendingPathComponent:
             [candidate stringByAppendingPathExtension:@"bundle"]];
         if ([path.stringByStandardizingPath isEqualToString:excluded] ||
             ![NSFileManager.defaultManager fileExistsAtPath:path])
@@ -558,8 +671,75 @@ NSArray<NSString *> *VZInstallationArtifactPaths(void)
             contentsOfDirectoryAtPath:VZInstallationsPath() error:nil])
         [paths addObject:[VZInstallationsPath()
             stringByAppendingPathComponent:name]];
-
+    // Exported diagnostics archives are generated files that nothing else
+    // ever removes. They belong with the other temporary files rather than
+    // growing in the background for the life of the installation.
+    NSString *diagnostics = [VZVMLibraryPath()
+        stringByAppendingPathComponent:@"Diagnostics"];
+    for (NSString *name in [manager contentsOfDirectoryAtPath:diagnostics
+                                                        error:nil])
+        [paths addObject:[diagnostics stringByAppendingPathComponent:name]];
     return paths;
+}
+
+// Installation attempt directories recorded for one virtual machine. A failed
+// or cancelled install keeps its half-written staging bundle here, which is
+// the largest thing Virtual Mac ever leaves behind, and deleting the virtual
+// machine never used to remove it.
+static NSArray<NSString *> *VZInstallationArtifactPathsForVM(NSString *bundlePath)
+{
+    NSString *name =
+        bundlePath.lastPathComponent.stringByDeletingPathExtension;
+    NSString *standard = bundlePath.stringByStandardizingPath;
+    NSString *directory = VZInstallationsPath();
+    NSMutableArray *paths = [NSMutableArray array];
+    for (NSString *entry in [NSFileManager.defaultManager
+            contentsOfDirectoryAtPath:directory error:nil]) {
+        if (![entry hasSuffix:@".installation"])
+            continue;
+        NSString *path = [directory stringByAppendingPathComponent:entry];
+        NSDictionary *attempt = [NSDictionary dictionaryWithContentsOfFile:
+            [path stringByAppendingPathComponent:@"Attempt.plist"]];
+        id destination = attempt[@"Destination"];
+        id recordedName = attempt[@"Name"];
+        BOOL matches =
+            ([destination isKindOfClass:NSString.class] &&
+             [[destination stringByStandardizingPath]
+                 isEqualToString:standard]) ||
+            ([recordedName isKindOfClass:NSString.class] &&
+             [recordedName isEqualToString:name]);
+        if (matches)
+            [paths addObject:path];
+    }
+    return paths;
+}
+
+// Removes a virtual machine together with the installation files it left
+// behind.
+static void VZRemoveMachineAtPath(NSString *bundlePath)
+{
+    NSMutableArray *paths = [NSMutableArray arrayWithObject:bundlePath];
+    [paths addObjectsFromArray:VZInstallationArtifactPathsForVM(bundlePath)];
+    VZRemovePaths(paths);
+}
+
+// Every virtual machine in the internal library. Uninstalling the package
+// removes exactly this folder, so this is also the set that disappears with
+// the package or the jailbreak; a machine on an external drive is not in it.
+NSArray<NSString *> *VZInternalVirtualMachinePaths(void)
+{
+    NSMutableArray *paths = [NSMutableArray array];
+    for (NSDictionary *machine in VZDiscoverVirtualMachines()) {
+        if ([machine[@"location"] isEqualToString:VZLibraryLocationInternal])
+            [paths addObject:machine[@"path"]];
+    }
+    return paths;
+}
+
+void VZRemoveVirtualMachines(NSArray<NSString *> *bundlePaths)
+{
+    for (NSString *bundlePath in bundlePaths)
+        VZRemoveMachineAtPath(bundlePath);
 }
 
 NSArray<NSString *> *VZCachedRestoreImagePaths(void)
@@ -1262,7 +1442,7 @@ void VZRemovePaths(NSArray<NSString *> *paths)
         style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         (void)action;
         NSString *path = [[self.bundlePath copy] autorelease];
-        VZRemovePaths(@[path]);
+        VZRemoveMachineAtPath(path);
         if ([[VZAppSettings.sharedSettings stringForKey:VZAutoBootVMPathKey]
                 isEqualToString:path]) {
             [VZAppSettings.sharedSettings setString:nil
@@ -1561,7 +1741,7 @@ void VZRemovePaths(NSArray<NSString *> *paths)
         NSString *oldName = self.bundlePath.lastPathComponent
             .stringByDeletingPathExtension;
         if (!self.running && ![newName isEqualToString:oldName]) {
-            NSString *destination = [VZVMLibraryPath()
+            NSString *destination = [VZLibraryPathForBundle(self.bundlePath)
                 stringByAppendingPathComponent:
                     [newName stringByAppendingPathExtension:@"bundle"]];
             if (![NSFileManager.defaultManager moveItemAtPath:self.bundlePath
@@ -2046,6 +2226,25 @@ static const CGFloat VZLibraryHorizontalInset = 24.0;
     [self reloadLibrary];
     if (!self.didCheckInterruptedDownloads) {
         self.didCheckInterruptedDownloads = YES;
+        // A move that was interrupted by the app being killed leaves a
+        // partial copy that the library never lists and nothing ever
+        // removes. Clearing it once per launch cannot race a move started
+        // later in this session.
+        NSMutableArray *abandoned = [NSMutableArray array];
+        for (NSDictionary *location in VZLibraryLocations()) {
+            NSString *directory = location[@"path"];
+            for (NSString *entry in [NSFileManager.defaultManager
+                    contentsOfDirectoryAtPath:directory error:nil]) {
+                if ([entry hasSuffix:@".bundle.moving"])
+                    [abandoned addObject:[directory
+                        stringByAppendingPathComponent:entry]];
+            }
+        }
+        if (abandoned.count) {
+            printf("[VirtualMac] removing %lu abandoned partial move(s)\n",
+                   (unsigned long)abandoned.count);
+            VZRemovePaths(abandoned);
+        }
         NSFileManager *manager = NSFileManager.defaultManager;
         NSString *restoreDirectory =
             VZRestoreImagesPath().stringByStandardizingPath;
@@ -2247,6 +2446,11 @@ static const CGFloat VZLibraryHorizontalInset = 24.0;
         [self presentViewController:alert animated:YES completion:nil];
         return;
     }
+    if (![self machineIsAvailable:machine]) {
+        [self presentDriveNotConnectedForMachine:machine];
+        [self reloadLibrary];
+        return;
+    }
     [NSUserDefaults.standardUserDefaults setObject:machine[@"path"]
         forKey:@"VZSelectedVMPath"];
     [self.delegate vmLibrary:self bootBundleAtPath:machine[@"path"]
@@ -2268,7 +2472,7 @@ static const CGFloat VZLibraryHorizontalInset = 24.0;
     [alert addAction:[UIAlertAction actionWithTitle:VZL(@"Delete")
         style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         (void)action;
-        VZRemovePaths(@[machine[@"path"]]);
+        VZRemoveMachineAtPath(machine[@"path"]);
         if ([[VZAppSettings.sharedSettings stringForKey:VZAutoBootVMPathKey]
                 isEqualToString:machine[@"path"]]) {
             [VZAppSettings.sharedSettings setString:nil
@@ -2287,6 +2491,11 @@ static const CGFloat VZLibraryHorizontalInset = 24.0;
         return;
     NSDictionary *machine = self.filteredMachines[index];
     BOOL running = [self isMachineActive:machine];
+    if (!running && ![self machineIsAvailable:machine]) {
+        [self presentDriveNotConnectedForMachine:machine];
+        [self reloadLibrary];
+        return;
+    }
     VZVMConfigurationViewController *configuration =
         [[[VZVMConfigurationViewController alloc]
           initWithBundlePath:machine[@"path"]
@@ -2322,6 +2531,240 @@ static const CGFloat VZLibraryHorizontalInset = 24.0;
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+// MARK: - External drive moves
+
+// YES when the bundle can be opened right now. An external bundle whose
+// drive was unplugged after the library scan fails this check.
+- (BOOL)machineIsAvailable:(NSDictionary *)machine
+{
+    NSString *path = machine[@"path"];
+    return VZBundleVolumeIsAvailable(path) && VZIsValidVMBundle(path);
+}
+
+- (void)presentDriveNotConnectedForMachine:(NSDictionary *)machine
+{
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:VZL(@"External Drive Not Connected")
+        message:[NSString stringWithFormat:
+            VZL(@"Connect the drive that contains “%@”, then pull down to refresh the library."),
+            machine[@"name"]]
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:VZL(@"OK")
+        style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+// Libraries this machine could be moved into, excluding the one it is in.
+// Once the app has its own container the shared folder is only ever a source:
+// new installs land there and are adopted immediately.
+- (NSArray<NSDictionary *> *)moveDestinationsForMachine:(NSDictionary *)machine
+{
+    if ([self isMachineActive:machine])
+        return @[];
+    NSString *current = machine[@"location"];
+    NSMutableArray *destinations = [NSMutableArray array];
+    for (NSDictionary *location in VZLibraryLocations()) {
+        if ([location[@"id"] isEqualToString:current])
+            continue;
+        [destinations addObject:location];
+    }
+    return destinations;
+}
+
+- (void)presentMoveOptionsForMachine:(NSDictionary *)machine
+                            fromView:(UIView *)source
+{
+    NSArray *destinations = [self moveDestinationsForMachine:machine];
+    if (!destinations.count)
+        return;
+    if (![self machineIsAvailable:machine]) {
+        [self presentDriveNotConnectedForMachine:machine];
+        return;
+    }
+    if (destinations.count == 1) {
+        [self confirmMoveMachine:machine toLocation:destinations.firstObject];
+        return;
+    }
+    // The destination names carry the meaning here, so the sheet is titled
+    // with the virtual machine rather than a second "move" phrase.
+    UIAlertController *sheet = [UIAlertController
+        alertControllerWithTitle:machine[@"name"] message:nil
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSDictionary *location in destinations) {
+        [sheet addAction:[UIAlertAction
+            actionWithTitle:VZLibraryLocationTitle(location[@"id"])
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            (void)action;
+            [self confirmMoveMachine:machine toLocation:location];
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:VZL(@"Cancel")
+        style:UIAlertActionStyleCancel handler:nil]];
+    sheet.popoverPresentationController.sourceView = source ?: self.view;
+    sheet.popoverPresentationController.sourceRect = source ? source.bounds :
+        CGRectMake(CGRectGetMidX(self.view.bounds),
+                   CGRectGetMidY(self.view.bounds), 1, 1);
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+- (void)confirmMoveMachine:(NSDictionary *)machine
+                toLocation:(NSDictionary *)location
+{
+    NSString *destination = location[@"path"];
+    if (!destination.length || [self isMachineActive:machine])
+        return;
+    if (![self machineIsAvailable:machine]) {
+        [self presentDriveNotConnectedForMachine:machine];
+        return;
+    }
+    // The volume test stats the destination, so make sure it exists first.
+    [NSFileManager.defaultManager createDirectoryAtPath:destination
+        withIntermediateDirectories:YES attributes:nil error:nil];
+    // A move that stays on one volume is a rename: instant, no extra space,
+    // and nothing to verify. Only a move to or from a drive copies data.
+    if (VZPathsShareVolume(
+            [machine[@"path"] stringByDeletingLastPathComponent],
+            destination)) {
+        [self moveMachineWithinVolume:machine toLibrary:destination];
+        return;
+    }
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:VZL(@"Move Virtual Mac?")
+        message:[NSString stringWithFormat:
+            VZL(@"“%@” will be copied to %@ and verified before the original is deleted. Keep the drive connected and Virtual Mac open until the move finishes."),
+            machine[@"name"], VZLibraryLocationTitle(location[@"id"])]
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:VZL(@"Cancel")
+        style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:VZL(@"Move")
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        (void)action;
+        [self moveMachine:machine toLibrary:destination];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)moveMachineWithinVolume:(NSDictionary *)machine
+                      toLibrary:(NSString *)destination
+{
+    if ([self activeVMBundlePath].length)
+        return; // never move anything while a guest owns a disk image
+    NSError *error = nil;
+    NSString *moved = VZMoveBundleWithinVolume(machine[@"path"], destination,
+                                               &error);
+    if (!moved) {
+        VZPresentFailureReport(self, VZL(@"Could Not Move Virtual Mac"),
+            error.localizedDescription, error.description,
+            VZFailureSupportOptionNone);
+        return;
+    }
+    VZUpdateSavedBundlePath(machine[@"path"], moved);
+    [self reloadLibrary];
+}
+
+- (void)moveMachine:(NSDictionary *)machine toLibrary:(NSString *)destination
+{
+    if ([self isMachineActive:machine] || [self activeVMBundlePath].length)
+        return; // never move anything while a guest owns a disk image
+    NSString *sourcePath = machine[@"path"];
+    VZBundleMover *mover = [[[VZBundleMover alloc]
+        initWithSourcePath:sourcePath destinationLibrary:destination]
+        autorelease];
+    VZProgressViewController *progress = [[[VZProgressViewController alloc]
+        initWithTitle:VZL(@"Moving Virtual Mac")] autorelease];
+    progress.statusText = machine[@"name"];
+    progress.indeterminate = YES;
+    progress.consoleHidden = YES;
+    __block BOOL cancelRequested = NO;
+    progress.cancellationHandler = ^{
+        if (cancelRequested)
+            return;
+        UIAlertController *confirmation = [UIAlertController
+            alertControllerWithTitle:VZL(@"Cancel Move?")
+            message:VZL(@"The incomplete copy will be deleted. The original Virtual Mac is not changed.")
+            preferredStyle:UIAlertControllerStyleAlert];
+        [confirmation addAction:[UIAlertAction actionWithTitle:VZL(@"Keep Moving")
+            style:UIAlertActionStyleCancel handler:nil]];
+        [confirmation addAction:[UIAlertAction actionWithTitle:VZL(@"Cancel Move")
+            style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            (void)action;
+            cancelRequested = YES;
+            progress.detailText = VZL(@"Cancelling…");
+            [mover cancel];
+        }]];
+        [progress presentViewController:confirmation animated:YES
+                             completion:nil];
+    };
+    UINavigationController *navigation = [[[UINavigationController alloc]
+        initWithRootViewController:progress] autorelease];
+    navigation.modalPresentationStyle = UIModalPresentationPageSheet;
+    navigation.modalInPresentation = YES;
+    navigation.preferredContentSize = CGSizeMake(640, 520);
+    [self presentViewController:navigation animated:YES completion:nil];
+    UIApplication.sharedApplication.idleTimerDisabled = YES;
+    [mover startWithProgress:^(VZBundleMovePhase phase, NSString *item,
+                               double fraction) {
+        if (cancelRequested)
+            return;
+        progress.indeterminate = phase == VZBundleMovePhaseFinishing;
+        progress.progress = (float)fraction;
+        if (phase == VZBundleMovePhaseCopying)
+            progress.detailText = [NSString stringWithFormat:
+                VZL(@"Copying %@"), item];
+        else if (phase == VZBundleMovePhaseVerifying)
+            progress.detailText = [NSString stringWithFormat:
+                VZL(@"Verifying %@"), item];
+        else
+            progress.detailText = VZL(@"Finishing…");
+    } completion:^(BOOL success, NSError *error, BOOL sourceRetained) {
+        UIApplication.sharedApplication.idleTimerDisabled = NO;
+        progress.cancellationHandler = nil;
+        [navigation dismissViewControllerAnimated:YES completion:^{
+            [self finishMoveOfMachine:machine mover:mover success:success
+                                error:error sourceRetained:sourceRetained];
+        }];
+    }];
+}
+
+- (void)finishMoveOfMachine:(NSDictionary *)machine
+                      mover:(VZBundleMover *)mover
+                    success:(BOOL)success
+                      error:(NSError *)error
+             sourceRetained:(BOOL)sourceRetained
+{
+    if (success)
+        VZUpdateSavedBundlePath(mover.sourcePath, mover.destinationPath);
+    [self reloadLibrary];
+    if (success && sourceRetained) {
+        VZPresentFailureReport(self, VZL(@"Moved With Warning"),
+            [NSString stringWithFormat:
+                VZL(@"“%@” was moved and verified, but the original copy could not be deleted. Two complete copies now exist; delete the one in %@ when convenient."),
+                machine[@"name"], VZLibraryPathForBundle(mover.sourcePath)],
+            mover.sourcePath, VZFailureSupportOptionNone);
+        return;
+    }
+    if (success) {
+        BOOL external = VZBundlePathIsExternal(mover.destinationPath);
+        UIAlertController *done = [UIAlertController
+            alertControllerWithTitle:VZL(@"Virtual Mac Moved")
+            message:[NSString stringWithFormat:external
+                ? VZL(@"“%@” is now stored on the external drive. Keep the drive connected while it is running.")
+                : VZL(@"“%@” is now stored on internal storage."),
+                machine[@"name"]]
+            preferredStyle:UIAlertControllerStyleAlert];
+        [done addAction:[UIAlertAction actionWithTitle:VZL(@"OK")
+            style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:done animated:YES completion:nil];
+        return;
+    }
+    if ([error.domain isEqualToString:VZExternalLibraryErrorDomain] &&
+        error.code == VZExternalLibraryErrorCancelled)
+        return;
+    VZPresentFailureReport(self, VZL(@"Could Not Move Virtual Mac"),
+        error.localizedDescription, error.description,
+        VZFailureSupportOptionNone);
+}
+
 - (void)presentActionsForMachine:(NSDictionary *)machine
                         fromView:(UIView *)source
 {
@@ -2339,6 +2782,12 @@ static const CGFloat VZLibraryHorizontalInset = 24.0;
         NSUInteger index = [self.filteredMachines indexOfObject:machine];
         if (index != NSNotFound) [self configureMachineAtIndex:index];
     }]];
+    if ([self moveDestinationsForMachine:machine].count)
+        [sheet addAction:[UIAlertAction actionWithTitle:VZL(@"Move…")
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            (void)action;
+            [self presentMoveOptionsForMachine:machine fromView:source];
+        }]];
     if (active)
         [sheet addAction:[UIAlertAction actionWithTitle:VZL(@"Force Shut Down")
             style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
@@ -2426,11 +2875,17 @@ static const CGFloat VZLibraryHorizontalInset = 24.0;
         NSDictionary *options = VZVMOptionsForBundle(machine[@"path"]);
         title.text = machine[@"name"];
         uint64_t storage = VZVMStorageCapacity(machine[@"path"], options);
+        NSString *location = machine[@"location"];
+        NSString *suffix = @"";
+        if ([machine[@"legacy"] boolValue])
+            suffix = VZL(@" · Legacy");
+        else if ([location isEqualToString:VZLibraryLocationExternal])
+            suffix = VZL(@" · External Drive");
         detail.text = [NSString stringWithFormat:
             VZL(@"%@ CPU · %@ GB RAM · %llu GB · %@%@"),
             options[VZCPUCountKey], @([options[VZMemorySizeKey] unsignedLongLongValue] >> 30),
             (unsigned long long)(storage >> 30), VZNetworkModeDisplayName(options),
-            [machine[@"legacy"] boolValue] ? VZL(@" · Legacy") : @""];
+            suffix];
         NSString *wallpaperName = [VZRestoreCatalog
             artworkNameForMachineName:machine[@"name"]];
         NSString *art = [[NSBundle mainBundle] pathForResource:wallpaperName
@@ -2636,7 +3091,23 @@ static const CGFloat VZLibraryHorizontalInset = 24.0;
             else [self confirmDeleteMachine:machine];
         }];
         power.attributes = UIMenuElementAttributesDestructive;
-        return [UIMenu menuWithTitle:@"" children:@[start, options, power]];
+        NSMutableArray *children = [NSMutableArray
+            arrayWithObjects:start, options, nil];
+        if ([self moveDestinationsForMachine:machine].count) {
+            BOOL external = [machine[@"location"]
+                isEqualToString:VZLibraryLocationExternal];
+            [children addObject:[UIAction actionWithTitle:VZL(@"Move…")
+                image:[UIImage systemImageNamed:external
+                    ? @"internaldrive" : @"externaldrive"]
+                identifier:nil handler:^(__kindof UIAction *action) {
+                (void)action;
+                [self presentMoveOptionsForMachine:machine
+                    fromView:[collectionView
+                        cellForItemAtIndexPath:indexPath]];
+            }]];
+        }
+        [children addObject:power];
+        return [UIMenu menuWithTitle:@"" children:children];
     }];
 }
 
