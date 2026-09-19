@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 ATTEMPTS="${1:-5}"
 START_WAIT="${VZ_IPAD_START_WAIT:-12}"
 INPUT_SELF_TEST="${VZ_IPAD_INPUT_SELF_TEST:-0}"
-BUNDLE="${VZ_IPAD_VM_BUNDLE:-/var/mobile/Media/VirtualMac/Sequoia.bundle}"
+BUNDLE="${VZ_IPAD_VM_BUNDLE:-/var/jb/var/mobile/VirtualMac/Sequoia.bundle}"
 
 [[ "$ATTEMPTS" =~ ^[1-9][0-9]*$ ]] ||
     die "attempt count must be a positive integer"

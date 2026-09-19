@@ -1,15 +1,82 @@
 #!/bin/sh
 
+# Removing Virtual Mac removes everything Virtual Mac wrote. dpkg deletes the
+# payload it unpacked; this script deletes what the package created at run
+# time, which dpkg does not track.
+
 set -eu
 export PATH=/var/jb/usr/bin:/var/jb/usr/sbin:/var/jb/bin:/var/jb/sbin:/usr/bin:/bin:/usr/sbin:/sbin
 
+# dpkg passes "upgrade" here while replacing this package with a newer one, so
+# everything below runs only on an actual uninstall.
 if test "${1:-}" = remove || test "${1:-}" = purge; then
-    # VM bundles deliberately remain in /var/mobile/Media/VirtualMac.
+    # The virtual machine library. A machine created after installation was
+    # never in the archive, so dpkg will not remove it.
+    #
+    # This deletes every virtual machine on internal storage, and is meant to:
+    # Virtual Mac is contained, so uninstalling reclaims its space in full and
+    # removing the jailbreak takes the same folder with the prefix. The path
+    # is written out rather than built from a variable, so an unset value
+    # cannot widen what this removes.
+    #
+    # Machines moved to an external drive live outside the prefix and are
+    # deliberately untouched. That is the only copy that survives.
+    rm -rf /var/jb/var/mobile/VirtualMac 2>/dev/null || true
+    # Leave no empty parent behind, but only if nothing else put something in
+    # it; another package may legitimately own /var/jb/var/mobile.
+    rmdir /var/jb/var/mobile 2>/dev/null || true
+
+    # Apple's bootpd has this path compiled in, so postinst had to create it
+    # above the prefix.
+    rm -f /var/db/dhcpd_leases 2>/dev/null || true
+    # Only reachable if an upgrade failed before postinst ran.
+    rm -f /var/root/.virtualmac-preserve-root 2>/dev/null || true
+
+    # Runtime scratch. These live in /tmp rather than the prefix because
+    # several are the live handoff between the app and the root
+    # virtualization and installation services, where a wrong path fails a
+    # boot or a restore instead of a log write. They are listed by name, not
+    # matched by a pattern, so this cannot reach another package's files.
+    for scratch in \
+        VirtualMac-host.png VirtualMac.log bootpd.plist hv14facade.log \
+        installation-reply.bin installation-usb.log installation.stderr.log \
+        installation_ep.txt installationhook.log pvg-trace.log \
+        restore-vmm.stderr.log virtual-mac-open-after-respring \
+        virtual-mac-vm-active virtualmac-third-party-usbmuxd.jobs \
+        vmm.stderr.log vmm_ep.txt vmmhook.log vz-autoboot-path \
+        vz-boot-args-candidates.bin vz-dump-guest-kernel \
+        vz-external-kernel-debug vz-force-stop-failed \
+        vz-guest-kernel-text.bin vz-guest-stopped vz-input-command \
+        vz-input-self-test vz-request-force-stop vz-request-guest-stop \
+        vz-springboard-shortcuts.log vz-usb-restore.sock vz-usbmuxd-enable \
+        vz-usbmuxd-launch.log vz-usbmuxd.log vz-usbmuxd.pid vzusbmuxd \
+        vzxpchook.log; do
+        rm -f "/tmp/$scratch" 2>/dev/null || true
+    done
+    rm -f /tmp/vmm_ep.txt.* /tmp/installation_ep.txt.* 2>/dev/null || true
+    # Apple's own socket path. Remove it only while it still points at the
+    # installer's multiplexer, which a crashed restore can leave dangling.
+    if test -L /var/run/usbmuxd &&
+            test "$(readlink /var/run/usbmuxd 2>/dev/null || true)" = /tmp/vzusbmuxd; then
+        rm -f /var/run/usbmuxd 2>/dev/null || true
+    fi
+
+    # Two things cannot be undone from here, and neither occupies space.
+    #
+    # postinst adds this package's CDHashes to the bootstrap's trust cache.
+    # Dopamine's jbctl exposes no verb to remove one again, so they remain
+    # until the jailbreak is removed. A hash whose file no longer exists is
+    # inert: it authorizes nothing.
+    #
+    # The iPadOS 14 path leaves a launchd enable/disable override for
+    # vzi.apple.bootpd. launchctl can set an override but not clear one, and
+    # an override naming a job that no longer exists is likewise inert.
+
     uicache -a 2>/dev/null || true
     if test -n "${CYDIA:-}"; then
-        read -r finish_fd finish_version <<EOF
+        read -r finish_fd finish_version <<CYDIA_RESULT
 $CYDIA
-EOF
+CYDIA_RESULT
         case "$finish_fd" in
             ''|*[!0-9]*) ;;
             *)
@@ -22,5 +89,4 @@ EOF
         echo "finish:restart"
     fi
 fi
-rm -f /var/root/.virtualmac-preserve-root 2>/dev/null || true
 exit 0

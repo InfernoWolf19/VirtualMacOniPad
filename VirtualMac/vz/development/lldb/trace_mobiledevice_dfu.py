@@ -1,7 +1,7 @@
 """Auto-continuing MobileDevice DFU construction trace for iPad LLDB.
 
 Usage after attaching to com.apple.Virtualization.Installation:
-  command script import /var/root/VirtualMac/lldb/trace_mobiledevice_dfu.py
+  command script import /var/jb/usr/libexec/VirtualMac/lldb/trace_mobiledevice_dfu.py
   trace-mobiledevice-dfu
   continue
 """

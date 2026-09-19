@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/common.sh
 source "$SCRIPT_DIR/../lib/common.sh"
 
-REMOTE="${VZ_IPAD_WORK:-/var/root/VirtualMac}"
-BUNDLE="${VZ_IPAD_VM_BUNDLE:-/var/mobile/Media/VirtualMac/Sequoia.bundle}"
+REMOTE="${VZ_IPAD_WORK:-/var/jb/usr/libexec/VirtualMac}"
+BUNDLE="${VZ_IPAD_VM_BUNDLE:-/var/jb/var/mobile/VirtualMac/Sequoia.bundle}"
 RUN_SECONDS="${VZ_RUN_SECONDS:-120}"
 RESULT_DIR="$VZ_BUILD_ROOT/validation"
 RESULT="$RESULT_DIR/ipad-vm-start.txt"

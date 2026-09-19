@@ -65,9 +65,9 @@ extern char _xpc_type_mach_send[];
 extern char **environ;
 
 #define VMM_NAME "com.apple.Virtualization.VirtualMachine"
-#define DEFAULT_VMM_BIN "/var/root/VirtualMac/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine"
+#define DEFAULT_VMM_BIN "/var/jb/usr/libexec/VirtualMac/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine"
 #define INSTALLATION_NAME "com.apple.Virtualization.Installation"
-#define DEFAULT_INSTALLATION_BIN "/var/root/VirtualMac/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation"
+#define DEFAULT_INSTALLATION_BIN "/var/jb/usr/libexec/VirtualMac/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation"
 #define EP_PORT_OFF  0x18
 #define DEFAULT_EP_FILE "/tmp/vmm_ep.txt"
 #define DEFAULT_INSTALLATION_EP_FILE "/tmp/installation_ep.txt"

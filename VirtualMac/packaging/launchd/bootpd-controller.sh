@@ -3,11 +3,12 @@
 # iPadOS 14 InternetSharing is sandboxed and cannot call launchctl itself.
 # Cross that boundary with Apple's /bin/sh under a root launchd job, and touch
 # only Virtual Mac's private label and package-owned plist/program paths.
+# Every package-owned path below stays inside the jailbreak prefix.
 set -u
 
-launchctl=/usr/bin/launchctl
+launchctl=/var/jb/usr/bin/launchctl
 label=system/vzi.apple.bootpd
-plist=/var/root/VirtualMac/rootful/Library/LaunchDaemons/com.apple.bootpd.plist
+plist=/var/jb/Library/LaunchDaemons/com.apple.bootpd.plist
 config=/tmp/bootpd.plist
 
 dhcp_active=0

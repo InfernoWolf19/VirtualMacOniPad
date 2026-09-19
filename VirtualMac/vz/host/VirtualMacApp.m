@@ -9,6 +9,7 @@
 #import "VZVMLibraryViewController.h"
 #import "VZAppSettings.h"
 #import "VZDiagnostics.h"
+#import "VZExternalLibrary.h"
 #import "VZFailureDetailsViewController.h"
 #import "VZProgressViewController.h"
 #import "VZSettingsViewController.h"
@@ -3683,6 +3684,21 @@ static void VZWriteInstallationAttempt(NSString *attemptPath, NSString *state,
         [self presentViewController:running animated:YES completion:nil];
         return;
     }
+    // A bundle on an external drive can vanish between the library scan and
+    // this tap. Refuse early instead of handing VZ a missing Disk.img.
+    if (!VZBundleVolumeIsAvailable(path) || !VZIsValidVMBundle(path)) {
+        UIAlertController *missing = [UIAlertController
+            alertControllerWithTitle:VZL(@"External Drive Not Connected")
+            message:[NSString stringWithFormat:
+                VZL(@"Connect the drive that contains “%@”, then pull down to refresh the library."),
+                path.lastPathComponent.stringByDeletingPathExtension]
+            preferredStyle:UIAlertControllerStyleAlert];
+        [missing addAction:[UIAlertAction actionWithTitle:VZL(@"OK")
+            style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:missing animated:YES completion:nil];
+        [library reloadLibrary];
+        return;
+    }
     if (VZIsRootHideEnvironment() && !gRootHidePivotalActionApproved) {
         VZContinueAfterRootHideInformation(self, ^{
             gRootHidePivotalActionApproved = YES;
@@ -3773,6 +3789,9 @@ static void VZWriteInstallationAttempt(NSString *attemptPath, NSString *state,
         return;
     }
     url = persistentURL;
+    // The setuid installer only accepts a final bundle that is a direct child
+    // of the support folder. That check is the security boundary for a
+    // root-privileged writer, so the install always lands there.
     NSString *bundlePath = [VZVMLibraryPath() stringByAppendingPathComponent:
         [name stringByAppendingPathExtension:@"bundle"]];
     NSString *attempt = [NSString stringWithFormat:@"%@-%@", name,
@@ -3806,7 +3825,7 @@ static void VZWriteInstallationAttempt(NSString *attemptPath, NSString *state,
     NSString *memory = [@(restoreMemorySize) stringValue];
     NSString *storage = [options[@"StorageSize"] stringValue];
     const char *launcher =
-        "/var/root/VirtualMac/install/install-launcher";
+        "/var/jb/usr/libexec/VirtualMac/install/install-launcher";
     char *arguments[] = {
         (char *)launcher,
         (char *)url.path.fileSystemRepresentation,
@@ -3908,7 +3927,7 @@ static void VZWriteInstallationAttempt(NSString *attemptPath, NSString *state,
             [self.installationTimer invalidate];
             self.installationTimer = nil;
             NSString *pid = [NSString stringWithFormat:@"%d", self.installationProcess];
-            const char *cancelLauncher = "/var/root/VirtualMac/install/install-launcher";
+            const char *cancelLauncher = "/var/jb/usr/libexec/VirtualMac/install/install-launcher";
             char *cancelArguments[] = {(char *)cancelLauncher, "--cancel-install",
                 (char *)pid.UTF8String,
                 (char *)self.installationAttemptPath.fileSystemRepresentation, NULL};
@@ -3951,6 +3970,9 @@ static void VZWriteInstallationAttempt(NSString *attemptPath, NSString *state,
                 @{@"CompletedAt": NSDate.date});
             if ([VZAppSettings.sharedSettings boolForKey:VZAutoDeleteRestoreImageKey])
                 VZRemovePaths(@[self.installationRestoreImagePath]);
+            // The installer writes straight into the internal library, which
+            // is also the only place the setuid launcher will write, so a
+            // finished bundle needs no further relocation.
             NSString *installedPath = [[self.installationBundlePath copy] autorelease];
             self.installationController.cancellationHandler = nil;
             [self.installationController.navigationController dismissViewControllerAnimated:YES completion:^{
@@ -4531,10 +4553,10 @@ static BOOL loadExtractedFrameworks(void) {
            [hookPath fileSystemRepresentation]);
 
     const char *images[] = {
-        "/var/root/VirtualMac/payload/Frameworks/vmnet.framework/vmnet",
-        "/var/root/VirtualMac/payload/Frameworks/Hypervisor.framework/Hypervisor",
-        "/var/root/VirtualMac/payload/Frameworks/ParavirtualizedGraphics.framework/ParavirtualizedGraphics",
-        "/var/root/VirtualMac/payload/Frameworks/Virtualization.framework/Virtualization",
+        "/var/jb/usr/libexec/VirtualMac/payload/Frameworks/vmnet.framework/vmnet",
+        "/var/jb/usr/libexec/VirtualMac/payload/Frameworks/Hypervisor.framework/Hypervisor",
+        "/var/jb/usr/libexec/VirtualMac/payload/Frameworks/ParavirtualizedGraphics.framework/ParavirtualizedGraphics",
+        "/var/jb/usr/libexec/VirtualMac/payload/Frameworks/Virtualization.framework/Virtualization",
     };
     for (NSUInteger i = 0; i < sizeof(images) / sizeof(images[0]); i++) {
         if (!dlopen(images[i], RTLD_NOW | RTLD_GLOBAL)) {
@@ -5169,10 +5191,10 @@ static void startVirtualMachineWorker(UIView *container, id delegate,
     unlink("/tmp/vmmhook.log");
     unlink("/tmp/vmm.stderr.log");
     setenv("VZ_VMM_BIN",
-           "/var/root/VirtualMac/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine",
+           "/var/jb/usr/libexec/VirtualMac/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine",
            1);
     setenv("VZ_AVP_BOOTER",
-           "/var/root/VirtualMac/payload/Frameworks/Virtualization.framework/Resources/AVPBooter.vmapple2.bin",
+           "/var/jb/usr/libexec/VirtualMac/payload/Frameworks/Virtualization.framework/Resources/AVPBooter.vmapple2.bin",
            1);
     // Consume the one-shot mode at the actual boot boundary. The current boot
     // keeps the captured value while Settings immediately returns to Off.
@@ -5793,7 +5815,15 @@ static void disconnectExternalDisplay(void) {
                 NSCharacterSet.whitespaceAndNewlineCharacterSet];
         NSString *persistentAutoBoot = [VZAppSettings.sharedSettings
             stringForKey:VZAutoBootVMPathKey];
-        if (persistentAutoBoot.length && !VZIsValidVMBundle(persistentAutoBoot)) {
+        if (persistentAutoBoot.length &&
+            !VZBundleVolumeIsAvailable(persistentAutoBoot)) {
+            // The auto-boot VM lives on an external drive that is not
+            // connected. Keep the setting and show the library instead of
+            // treating the VM as deleted.
+            printf("[VirtualMac] auto boot VM drive not connected path=%s\n",
+                   persistentAutoBoot.UTF8String);
+            persistentAutoBoot = nil;
+        } else if (persistentAutoBoot.length && !VZIsValidVMBundle(persistentAutoBoot)) {
             NSString *identifier = [VZAppSettings.sharedSettings
                 stringForKey:VZAutoBootVMIdentifierKey];
             persistentAutoBoot = nil;
@@ -5836,7 +5866,7 @@ static void disconnectExternalDisplay(void) {
             // can request one real UIKit installation after launching the app.
             // The normal library, visible progress alert, polling timer, and
             // completion handling are all used; this is not a headless helper.
-            NSString *requestPath = [VZVMSupportPath()
+            NSString *requestPath = [VZVMLibraryPath()
                 stringByAppendingPathComponent:@".visible-install-request"];
             NSString *request = [NSString
                 stringWithContentsOfFile:requestPath

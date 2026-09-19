@@ -8,8 +8,6 @@ source "$SCRIPT_DIR/lib/common.sh"
 need_command ditto
 need_command dpkg-deb
 need_command file
-need_command codesign
-need_command install_name_tool
 need_command ldid
 need_command plutil
 need_command rsync
@@ -53,7 +51,7 @@ chmod 755 "$STAGE"
 
 mkdir -p \
     "$STAGE/DEBIAN" \
-    "$STAGE/var/root/VirtualMac" \
+    "$STAGE/var/jb/usr/libexec/VirtualMac" \
     "$STAGE/var/jb/Applications" \
     "$STAGE/var/jb/Library/LaunchDaemons" \
     "$STAGE/var/jb/basebin/LaunchDaemons" \
@@ -62,19 +60,19 @@ mkdir -p \
     "$STAGE/var/jb/usr/bin" \
     "$STAGE/var/jb/usr/sbin" \
     "$STAGE/var/jb/usr/share/VirtualMac" \
-    "$STAGE/var/root/VirtualMac/bootstrap-common/usr/lib/TweakInject" \
+    "$STAGE/var/jb/usr/libexec/VirtualMac/bootstrap-common/usr/lib/TweakInject" \
     "$RELEASE"
 
 ditto "$VZ_BUILD_ROOT/ipad-installation/payload" \
-    "$STAGE/var/root/VirtualMac/payload"
+    "$STAGE/var/jb/usr/libexec/VirtualMac/payload"
 # The installation build consumes the VM compatibility dylib, so its cached
 # payload may lag during a fast VM-only iteration.  Overlay the authoritative
 # VM runtime last; both services intentionally use this one shared framework
 # tree in the final package.
 ditto "$VZ_BUILD_ROOT/ipad-vm/payload" \
-    "$STAGE/var/root/VirtualMac/payload"
+    "$STAGE/var/jb/usr/libexec/VirtualMac/payload"
 ditto "$VZ_BUILD_ROOT/ipad-installation/install" \
-    "$STAGE/var/root/VirtualMac/install"
+    "$STAGE/var/jb/usr/libexec/VirtualMac/install"
 ditto "$VZ_BUILD_ROOT/ipad-app/VirtualMac.app" \
     "$STAGE/var/jb/Applications/VirtualMac.app"
 install -m 755 "$VZ_BUILD_ROOT/ipad-app/virtualmac-diagnostics" \
@@ -82,11 +80,11 @@ install -m 755 "$VZ_BUILD_ROOT/ipad-app/virtualmac-diagnostics" \
 
 # The component builds retain command-line probes for developer iteration.
 # They are not used by the app and do not belong in the end-user package.
-rm -rf "$STAGE/var/root/VirtualMac/payload/bin"
+rm -rf "$STAGE/var/jb/usr/libexec/VirtualMac/payload/bin"
 rm -f \
-    "$STAGE/var/root/VirtualMac/payload/trustcache.txt" \
-    "$STAGE/var/root/VirtualMac/install/restore-image-probe" \
-    "$STAGE/var/root/VirtualMac/install/usb-bridge-probe"
+    "$STAGE/var/jb/usr/libexec/VirtualMac/payload/trustcache.txt" \
+    "$STAGE/var/jb/usr/libexec/VirtualMac/install/restore-image-probe" \
+    "$STAGE/var/jb/usr/libexec/VirtualMac/install/usb-bridge-probe"
 
 install -m 755 "$VZ_BUILD_ROOT/ipad-network-sharing/InternetSharing" \
     "$STAGE/var/jb/usr/libexec/InternetSharing"
@@ -129,92 +127,24 @@ for destination in \
         "$destination"
 done
 install -m 755 "$VZ_BUILD_ROOT/ipad-tweak/VZKeyboardPassthrough.dylib" \
-    "$STAGE/var/root/VirtualMac/bootstrap-common/usr/lib/TweakInject/VZKeyboardPassthrough.dylib"
+    "$STAGE/var/jb/usr/libexec/VirtualMac/bootstrap-common/usr/lib/TweakInject/VZKeyboardPassthrough.dylib"
 install -m 644 "$VZ_BUILD_ROOT/ipad-tweak/VZKeyboardPassthrough.plist" \
-    "$STAGE/var/root/VirtualMac/bootstrap-common/usr/lib/TweakInject/VZKeyboardPassthrough.plist"
+    "$STAGE/var/jb/usr/libexec/VirtualMac/bootstrap-common/usr/lib/TweakInject/VZKeyboardPassthrough.plist"
 # Releases before 1.1 owned the MobileSubstrate compatibility pathname. On
 # some bootstraps it aliases usr/lib/TweakInject, so dpkg's obsolete-file pass
 # can otherwise unlink a new canonical payload through the old name during an
 # upgrade. Keep one neutral package-owned source and let postinst install the
 # single loader copy after that pass has completed.
 
-# Taurine is rootful while Dopamine is rootless. Keep one common framework
-# runtime under /var/root. The normal /var/jb payload is also the installation
-# source for rootful copies of the app, diagnostics command, tweak, and helper
-# libraries. Only rootful binaries with different load commands or a distinct
-# iPadOS 14 implementation are staged separately below. This avoids packaging
-# a second copy of every app resource and localization.
-ROOTFUL="$STAGE/var/root/VirtualMac/bootstrap-rootful"
-ROOTFUL_HELPERS="$STAGE/var/root/VirtualMac/rootful"
-mkdir -p \
-    "$ROOTFUL/usr/libexec/VirtualMac" \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons" \
-    "$ROOTFUL_HELPERS"
-for name in InternetSharing.ipados14; do
-    install -m 755 "$VZ_BUILD_ROOT/ipad-network-sharing/$name" \
-        "$ROOTFUL/usr/libexec/VirtualMac/$name"
-    install_name_tool -change @loader_path/../lib/AuthorizationCompat.dylib \
-        /usr/lib/VirtualMac/AuthorizationCompat.dylib \
-        "$ROOTFUL/usr/libexec/VirtualMac/$name"
-    install_name_tool -change @loader_path/../lib/NetworkMemoryPolicy.dylib \
-        /usr/lib/VirtualMac/NetworkMemoryPolicy.dylib \
-        "$ROOTFUL/usr/libexec/VirtualMac/$name"
-    codesign --force --sign - \
-        --entitlements "$VZ_REPO_ROOT/vz/patches/internet-sharing.ents.xml" \
-        --generate-entitlement-der "$ROOTFUL/usr/libexec/VirtualMac/$name"
-done
-
-# Use the matching iPadOS 14 implementation, privately. Its package signature
-# is preflighted by Taurine; Apple's /usr/libexec/bootpd remains untouched.
-install -m 755 "$VZ_BUILD_ROOT/ipad-network-helpers/bootpd.ipados14" \
-    "$ROOTFUL/usr/libexec/VirtualMac/bootpd"
-install_name_tool -change @loader_path/../lib/NetworkMemoryPolicy.dylib \
-    /usr/lib/VirtualMac/NetworkMemoryPolicy.dylib \
-    "$ROOTFUL/usr/libexec/VirtualMac/bootpd"
-codesign --force --sign - \
-    --entitlements "$VZ_REPO_ROOT/vz/patches/network-helper.ents.xml" \
-    --generate-entitlement-der "$ROOTFUL/usr/libexec/VirtualMac/bootpd"
-install -m 755 "$VZ_REPO_ROOT/packaging/rootful/bootpd-controller.sh" \
-    "$ROOTFUL/usr/libexec/VirtualMac/bootpd-controller.sh"
-install -m 644 "$VZ_BUILD_ROOT/ipad-network-helpers/com.apple.bootpd.plist" \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.bootpd.plist"
-install -m 644 "$VZ_BUILD_ROOT/ipad-network-sharing/com.apple.NetworkSharing.plist" \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.NetworkSharing.plist"
+# iPadOS 14 InternetSharing is sandboxed and cannot call launchctl itself. A
+# root launchd job watches /tmp/bootpd.plist and enables the private DHCP job
+# once InternetSharing has written its configuration. postinst bootstraps this
+# only on iPadOS 14; the established iPadOS 15/16 placement is unchanged.
+install -m 755 "$VZ_REPO_ROOT/packaging/launchd/bootpd-controller.sh" \
+    "$STAGE/var/jb/usr/libexec/VirtualMac/bootpd-controller.sh"
 install -m 644 \
-    "$VZ_REPO_ROOT/packaging/rootful/vzi.apple.bootpd-controller.plist" \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/vzi.apple.bootpd-controller.plist"
-plutil -replace ProgramArguments -json \
-    '["/usr/libexec/VirtualMac/bootpd"]' \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.bootpd.plist"
-plutil -replace Label -string vzi.apple.bootpd \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.bootpd.plist"
-plutil -replace Program -string \
-    /usr/libexec/VirtualMac/bootpd \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.bootpd.plist"
-# Register the socket job without activating it during package installation.
-# Big Sur InternetSharing enables it only after writing /tmp/bootpd.plist.
-plutil -replace Disabled -bool YES \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.bootpd.plist"
-plutil -replace ProgramArguments -json \
-    '["/usr/libexec/VirtualMac/InternetSharing"]' \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.NetworkSharing.plist"
-plutil -replace Program -string \
-    /usr/libexec/VirtualMac/InternetSharing \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.NetworkSharing.plist"
-# iPadOS 14 vmnet cannot resolve the private system-domain Mach service on
-# demand. Start the matching helper at bootstrap so it is already accepting
-# requests before a VM attaches its NIC. This plist is rootful-only; the
-# established iPadOS 15/16 launch placement is unchanged.
-plutil -remove RunAtLoad \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.NetworkSharing.plist" \
-    2>/dev/null || true
-plutil -insert RunAtLoad -bool YES \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.NetworkSharing.plist"
-plutil -remove KeepAlive \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.NetworkSharing.plist" \
-    2>/dev/null || true
-plutil -insert KeepAlive -bool YES \
-    "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.NetworkSharing.plist"
+    "$VZ_REPO_ROOT/packaging/launchd/vzi.apple.bootpd-controller.plist" \
+    "$STAGE/var/jb/Library/LaunchDaemons/vzi.apple.bootpd-controller.plist"
 # Never package host filesystem metadata. Component builders also remove it
 # before signing, but this catches metadata from every independently built
 # app, XPC, framework, and packaging input.
@@ -233,7 +163,7 @@ done < <(find "$STAGE" -type f -print0)
 rsync -a "$VZ_REPO_ROOT/packaging/DEBIAN/" "$STAGE/DEBIAN/"
 chmod 755 "$STAGE/DEBIAN/preinst" "$STAGE/DEBIAN/postinst" \
     "$STAGE/DEBIAN/prerm" "$STAGE/DEBIAN/postrm"
-chmod 4755 "$STAGE/var/root/VirtualMac/install/install-launcher"
+chmod 4755 "$STAGE/var/jb/usr/libexec/VirtualMac/install/install-launcher"
 "$SCRIPT_DIR/audit-ipad-package-stage.sh" "$STAGE"
 installed_size="$(du -sk "$STAGE" | awk '{print $1}')"
 sed -i '' -e "s/@VERSION@/$VERSION/g" \

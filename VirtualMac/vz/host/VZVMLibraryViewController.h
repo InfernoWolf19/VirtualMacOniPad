@@ -20,10 +20,27 @@ NSArray<NSDictionary *> *VZDiscoverVirtualMachines(void);
 NSArray<NSString *> *VZInstallationArtifactPaths(void);
 NSArray<NSString *> *VZCachedRestoreImagePaths(void);
 void VZRemovePaths(NSArray<NSString *> *paths);
+// The virtual machines in the internal library, and a removal that takes each
+// one's leftover installation files with it.
+NSArray<NSString *> *VZInternalVirtualMachinePaths(void);
+void VZRemoveVirtualMachines(NSArray<NSString *> *bundlePaths);
+// Everything Virtual Mac stores: the machines themselves, restore images,
+// installation staging and settings. It is also the default library, as
+// opposed to an external drive a machine has been moved to. The path is
+// fixed, because the setuid installer and the keyboard tweak both depend on
+// it being constant, and it is inside the jailbreak prefix, so removing the
+// package or the jailbreak takes it with them.
 NSString *VZVMLibraryPath(void);
-NSString *VZVMSupportPath(void);
 NSString *VZRestoreImagesPath(void);
 NSString *VZInstallationsPath(void);
+// Moves a bundle into another library on the same volume by renaming it.
+// Returns the new path, or nil with an error when the two are not on one
+// volume or the rename fails.
+NSString * _Nullable VZMoveBundleWithinVolume(NSString *bundlePath,
+                                              NSString *destinationLibrary,
+                                              NSError **error);
+// Repoints the auto-boot and last-selected settings after a bundle moves.
+void VZUpdateSavedBundlePath(NSString *oldPath, NSString *newPath);
 
 @class VZVMLibraryViewController;
 

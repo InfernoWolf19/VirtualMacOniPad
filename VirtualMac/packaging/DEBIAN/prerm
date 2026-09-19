@@ -3,21 +3,12 @@
 set -eu
 export PATH=/var/jb/usr/bin:/var/jb/usr/sbin:/var/jb/bin:/var/jb/sbin:/usr/bin:/bin:/usr/sbin:/sbin
 
-# dpkg owns the package's /var/root/VirtualMac subtree but must never attempt
-# to remove the /var/root mount point after deleting it. A temporary unowned
-# entry makes the parent non-empty during dpkg's directory-removal pass;
-# postrm removes the marker after that pass has completed.
-touch /var/root/.virtualmac-preserve-root 2>/dev/null || true
-
 killall VirtualMac 2>/dev/null || true
 killall com.apple.Virtualization.VirtualMachine 2>/dev/null || true
 killall com.apple.Virtualization.Installation 2>/dev/null || true
-launchctl=/usr/bin/launchctl
-app=/Applications/VirtualMac.app
-if test -x /var/jb/usr/bin/launchctl; then
-    launchctl=/var/jb/usr/bin/launchctl
-    app=/var/jb/Applications/VirtualMac.app
-fi
+
+launchctl=/var/jb/usr/bin/launchctl
+app=/var/jb/Applications/VirtualMac.app
 for domain in system user/501; do
     "$launchctl" bootout "$domain/vzi.apple.bootpd-controller" \
         2>/dev/null || true
@@ -27,21 +18,10 @@ for domain in system user/501; do
         2>/dev/null || true
 done
 uicache -u "$app" 2>/dev/null || true
-prefix=/var/jb
-if test ! -x /var/jb/usr/bin/jbctl && test ! -x /var/jb/basebin/jbctl; then
-    prefix=
-fi
-rm -f "$prefix/usr/lib/TweakInject/VZKeyboardPassthrough.dylib" \
-    "$prefix/usr/lib/TweakInject/VZKeyboardPassthrough.plist"
-if test ! -x /var/jb/usr/bin/jbctl && test ! -x /var/jb/basebin/jbctl; then
-    rm -rf /Applications/VirtualMac.app
-    # Remove only files copied by this package. Networking helpers live below
-    # /var/root/VirtualMac and are removed as package payload; never touch an
-    # Apple executable or daemon plist under /usr or /System.
-    rm -f /Library/LaunchDaemons/com.apple.bootpd.plist \
-        /Library/LaunchDaemons/com.apple.NetworkSharing.plist \
-        /usr/bin/virtualmac-diagnostics
-    rm -rf /usr/lib/VirtualMac /usr/libexec/VirtualMac \
-        /usr/sbin/VirtualMac
-fi
+
+# The loader copy is installed by postinst rather than unpacked, so dpkg does
+# not own it. Everything else this package installs is ordinary payload below
+# /var/jb and is removed by dpkg itself.
+rm -f /var/jb/usr/lib/TweakInject/VZKeyboardPassthrough.dylib \
+    /var/jb/usr/lib/TweakInject/VZKeyboardPassthrough.plist
 exit 0

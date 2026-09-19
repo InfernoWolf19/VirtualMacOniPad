@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
 OUT="$VZ_BUILD_ROOT/ipad-installation"
-REMOTE="${VZ_IPAD_WORK:-/var/root/VirtualMac}"
+REMOTE="${VZ_IPAD_WORK:-/var/jb/usr/libexec/VirtualMac}"
 ARCHIVE="$(mktemp -t VirtualMac-installation.XXXXXX.tar)"
 trap 'rm -f "$ARCHIVE"' EXIT
 

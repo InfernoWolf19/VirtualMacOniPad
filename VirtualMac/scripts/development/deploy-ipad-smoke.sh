@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
 LOCAL="$VZ_BUILD_ROOT/ipad-smoke"
-REMOTE="${VZ_IPAD_WORK:-/var/root/VirtualMac}"
+REMOTE="${VZ_IPAD_WORK:-/var/jb/usr/libexec/VirtualMac}"
 ARCHIVE="$(mktemp -t VirtualMac-smoke.XXXXXX.tar.gz)"
 RESULT_DIR="$VZ_BUILD_ROOT/validation"
 RESULT="$RESULT_DIR/ipad-smoke.txt"

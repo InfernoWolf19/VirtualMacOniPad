@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
 LOCAL="${VZ_VMM_COMPAT_OUTPUT:-$VZ_BUILD_ROOT/ipad-vm/payload/Frameworks/LaunchServicesCompat.dylib}"
-REMOTE="${VZ_IPAD_WORK:-/var/root/VirtualMac}/payload/Frameworks/LaunchServicesCompat.dylib"
+REMOTE="${VZ_IPAD_WORK:-/var/jb/usr/libexec/VirtualMac}/payload/Frameworks/LaunchServicesCompat.dylib"
 
 need_command ldid
 need_file "$LOCAL"

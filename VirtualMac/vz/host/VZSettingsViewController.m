@@ -1,6 +1,7 @@
 #import "VZSettingsViewController.h"
 #import "VZAppSettings.h"
 #import "VZDiagnostics.h"
+#import "VZExternalLibrary.h"
 #import "VZLocalization.h"
 #import "VZSupport.h"
 #import "VZVMLibraryViewController.h"
@@ -234,7 +235,7 @@ static NSString *VZSettingsFittingTitle(UITableView *tableView,
 {
     (void)tableView;
     return section == 0 ? 4 : section == 1 ? 6 : section == 2 ? 4 :
-        section == 3 ? 3 : section == 4 ? 3 : section == 5 ? 2 :
+        section == 3 ? 3 : section == 4 ? 5 : section == 5 ? 2 :
         section == 6 ? 1 : 4;
 }
 
@@ -249,8 +250,17 @@ static NSString *VZSettingsFittingTitle(UITableView *tableView,
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
     (void)tableView;
-    if (section == 4)
-        return [NSString stringWithFormat:VZL(@"Virtual Mac devices are stored in %@."), VZVMLibraryPath()];
+    if (section == 4) {
+        NSString *internal = [NSString stringWithFormat:
+            VZL(@"Virtual Mac devices are stored in %@."), VZVMLibraryPath()];
+        NSString *external = VZExternalLibraryPath();
+        if (!external)
+            return internal;
+        return [NSString stringWithFormat:@"%@ %@", internal,
+            [NSString stringWithFormat:
+                VZL(@"Virtual Macs moved to the external drive are stored in %@."),
+                external]];
+    }
     if (section == 2)
         return VZDeviceString(
             VZL(@"These options affect iPadOS only while Virtual Mac is frontmost and a Virtual Mac is running."),
@@ -453,6 +463,30 @@ static NSString *VZSettingsFittingTitle(UITableView *tableView,
             forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = toggle;
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    } else if (indexPath.section == 4 && indexPath.row == 3) {
+        cell.textLabel.text = VZL(@"External Drive Library");
+        switch (VZExternalLibraryCurrentState()) {
+        case VZExternalLibraryStateMounted:
+            cell.detailTextLabel.text = VZExternalLibraryVolumeName();
+            break;
+        case VZExternalLibraryStateNotConnected:
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@",
+                VZExternalLibraryVolumeName(), VZL(@"Not Connected")];
+            break;
+        default:
+            cell.detailTextLabel.text = VZL(@"Off");
+            break;
+        }
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else if (indexPath.section == 4 && indexPath.row == 4) {
+        NSArray *machines = VZInternalVirtualMachinePaths();
+        cell.textLabel.text = VZL(@"Delete All Virtual Machines");
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%lu",
+            (unsigned long)machines.count];
+        cell.textLabel.textColor = machines.count ? UIColor.systemRedColor
+                                                  : UIColor.secondaryLabelColor;
+        cell.selectionStyle = machines.count ? UITableViewCellSelectionStyleDefault
+                                             : UITableViewCellSelectionStyleNone;
     } else if (indexPath.section == 4) {
         NSArray *paths = indexPath.row == 1 ? VZCachedRestoreImagePaths()
                                             : VZInstallationArtifactPaths();
@@ -631,6 +665,119 @@ static NSString *VZSettingsFittingTitle(UITableView *tableView,
     [self presentViewController:picker animated:YES completion:nil];
 }
 
+- (void)chooseExternalLibraryFrom:(UITableViewCell *)cell
+{
+    NSArray *volumes = VZExternalVolumes();
+    NSString *current = VZExternalLibraryVolumePath();
+    if (!volumes.count && !current) {
+        UIAlertController *alert = [UIAlertController
+            alertControllerWithTitle:VZL(@"No External Drive Found")
+            message:VZL(@"Connect a drive that appears in the Files app, then try again. A drive formatted as APFS is recommended.")
+            preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:VZL(@"OK")
+            style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    UIAlertController *picker = [UIAlertController
+        alertControllerWithTitle:VZL(@"External Drive Library")
+        message:VZL(@"Virtual Macs moved to the chosen drive are stored in a VirtualMac folder on it. New Virtual Macs are always created on internal storage first.")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSDictionary *volume in volumes) {
+        NSString *path = volume[@"path"];
+        BOOL selected = [path isEqualToString:current];
+        NSString *title = selected
+            ? [NSString stringWithFormat:@"✓ %@", volume[@"name"]]
+            : volume[@"name"];
+        [picker addAction:[UIAlertAction actionWithTitle:title
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            (void)action;
+            [self selectExternalVolumeAtPath:path fromCell:cell];
+        }]];
+    }
+    if (current) {
+        [picker addAction:[UIAlertAction actionWithTitle:VZL(@"Turn Off")
+            style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            (void)action;
+            // Only the setting is cleared. Bundles on the drive stay where
+            // they are and reappear when the library is turned on again.
+            [VZAppSettings.sharedSettings setString:nil
+                forKey:VZExternalLibraryPathKey];
+            [self.tableView reloadData];
+        }]];
+    }
+    [picker addAction:[UIAlertAction actionWithTitle:VZL(@"Cancel")
+        style:UIAlertActionStyleCancel handler:nil]];
+    picker.popoverPresentationController.sourceView = cell;
+    picker.popoverPresentationController.sourceRect = cell.bounds;
+    [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)selectExternalVolumeAtPath:(NSString *)volumePath
+                          fromCell:(UITableViewCell *)cell
+{
+    NSString *folder = [volumePath
+        stringByAppendingPathComponent:VZExternalLibraryFolderName];
+    UIActivityIndicatorView *spinner = [[[UIActivityIndicatorView alloc]
+        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium]
+        autorelease];
+    cell.accessoryView = spinner;
+    cell.userInteractionEnabled = NO;
+    [spinner startAnimating];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        BOOL sparse = NO;
+        NSError *error = nil;
+        BOOL writable = VZExternalVolumeIsLive(volumePath) &&
+            VZProbeExternalLibraryFolder(folder, &sparse, &error);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            cell.accessoryView = nil;
+            cell.userInteractionEnabled = YES;
+            if (!writable) {
+                VZPresentFailureReport(self, VZL(@"Drive Not Ready"),
+                    VZL(@"The drive could not be written to. Reconnect it and make sure it is formatted as APFS, exFAT, or HFS+."),
+                    error.description, VZFailureSupportOptionNone);
+                [self.tableView reloadData];
+                return;
+            }
+            [VZAppSettings.sharedSettings setString:folder
+                forKey:VZExternalLibraryPathKey];
+            [self.tableView reloadData];
+            if (sparse)
+                return;
+            UIAlertController *warning = [UIAlertController
+                alertControllerWithTitle:VZL(@"Drive Does Not Support Compact Disk Images")
+                message:VZL(@"Each Virtual Mac moved to this drive will use its full storage size. Format the drive as APFS to keep disk images compact.")
+                preferredStyle:UIAlertControllerStyleAlert];
+            [warning addAction:[UIAlertAction actionWithTitle:VZL(@"OK")
+                style:UIAlertActionStyleCancel handler:nil]];
+            [self presentViewController:warning animated:YES completion:nil];
+        });
+    });
+}
+
+// Deliberately not routed through confirmDeletePaths:title:, whose message
+// reassures the user that complete virtual machines are left alone.
+- (void)confirmDeleteAllVirtualMachines
+{
+    NSArray<NSString *> *machines = VZInternalVirtualMachinePaths();
+    if (!machines.count) return;
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:VZL(@"Delete All Virtual Machines?")
+        message:[NSString stringWithFormat:
+            VZL(@"This permanently removes %lu Virtual Mac devices from internal storage, along with their installation files. Virtual Macs on an external drive are not removed."),
+            (unsigned long)machines.count]
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:VZL(@"Cancel")
+        style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:VZL(@"Delete")
+        style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            (void)action;
+            VZRemoveVirtualMachines(machines);
+            [self.tableView reloadData];
+        }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 - (void)confirmDeletePaths:(NSArray<NSString *> *)paths title:(NSString *)title
 {
     if (!paths.count) return;
@@ -736,6 +883,10 @@ static NSString *VZSettingsFittingTitle(UITableView *tableView,
         [self confirmDeletePaths:VZCachedRestoreImagePaths() title:VZL(@"Delete Cached IPSW?")];
     else if (indexPath.section == 4 && indexPath.row == 2)
         [self confirmDeletePaths:VZInstallationArtifactPaths() title:VZL(@"Delete Temporary Installation Files?")];
+    else if (indexPath.section == 4 && indexPath.row == 3)
+        [self chooseExternalLibraryFrom:cell];
+    else if (indexPath.section == 4 && indexPath.row == 4)
+        [self confirmDeleteAllVirtualMachines];
     else if (indexPath.section == 7 && indexPath.row == 1)
         [self exportDiagnosticsFrom:cell];
     else if (indexPath.section == 5 && indexPath.row == 1)

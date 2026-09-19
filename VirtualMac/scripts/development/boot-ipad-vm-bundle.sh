@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/common.sh
 source "$SCRIPT_DIR/../lib/common.sh"
 
-BUNDLE="${1:-/var/mobile/Media/VirtualMac/Sequoia.bundle}"
+BUNDLE="${1:-/var/jb/var/mobile/VirtualMac/Sequoia.bundle}"
 TIMEOUT="${VZ_IPAD_BOOT_TIMEOUT:-120}"
 REMOTE_APP_PATTERN="/VirtualMac.app/VirtualMac"
 

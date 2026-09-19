@@ -193,7 +193,7 @@ def find_machos(roots: list[Path], host_major: int) -> list[Path]:
                 # The universal package uses this restamped Ventura helper
                 # only on rootless iPadOS 15/16. Taurine/iPadOS 14 instead
                 # packages its matching native implementation under the
-                # private /var/root/VirtualMac/rootful runtime.
+                # private /var/jb/usr/libexec/VirtualMac/rootful runtime.
                 if (
                     host_major == 14
                     and candidate.name == "bootpd"

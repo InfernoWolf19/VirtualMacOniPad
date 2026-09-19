@@ -10,7 +10,7 @@ STAGE="${1:-}"
     exit 2
 }
 
-RUNTIME="$STAGE/var/root/VirtualMac"
+RUNTIME="$STAGE/var/jb/usr/libexec/VirtualMac"
 PAYLOAD="$RUNTIME/payload"
 FRAMEWORKS="$PAYLOAD/Frameworks"
 VMM="$PAYLOAD/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine"
@@ -64,42 +64,46 @@ for variant in \
         die "host variant must be an independent file: ${variant#"$STAGE/"}"
 done
 
-ROOTFUL_PRIVATE="$STAGE/var/root/VirtualMac/rootful"
-ROOTFUL_BOOTSTRAP="$STAGE/var/root/VirtualMac/bootstrap-rootful"
-COMMON_BOOTSTRAP="$STAGE/var/root/VirtualMac/bootstrap-common"
-[[ -f "$ROOTFUL_BOOTSTRAP/usr/libexec/VirtualMac/bootpd" ]] ||
-    die "missing private matching iPadOS 14 bootpd"
-[[ -f "$ROOTFUL_PRIVATE/Library/LaunchDaemons/com.apple.bootpd.plist" ]] ||
-    die "missing private iPadOS 14 bootpd job"
-[[ -f "$ROOTFUL_PRIVATE/Library/LaunchDaemons/vzi.apple.bootpd-controller.plist" ]] ||
-    die "missing iPadOS 14 private DHCP controller job"
-[[ -x "$ROOTFUL_BOOTSTRAP/usr/libexec/VirtualMac/bootpd-controller.sh" ]] ||
+COMMON_BOOTSTRAP="$STAGE/var/jb/usr/libexec/VirtualMac/bootstrap-common"
+
+# This package is rootless-only and contained: every file it installs must
+# land inside the jailbreak prefix. An entry anywhere else would outlive
+# "Remove Jailbreak" with no package manager left to clean it up, which is
+# the whole failure this layout exists to prevent.
+while IFS= read -r entry; do
+    case "${entry#"$STAGE/"}" in
+        DEBIAN|DEBIAN/*|var|var/jb|var/jb/*) ;;
+        *) die "package installs outside the jailbreak prefix: ${entry#"$STAGE/"}" ;;
+    esac
+done < <(find "$STAGE" -mindepth 1)
+
+# Catch a compiled-in or scripted reference to a pre-1.2.4 location that a
+# source change missed. Such a file installs correctly and then fails to find
+# its payload at run time, which is far harder to diagnose than a build error.
+# DEBIAN/preinst names the old runtime deliberately, to reclaim a stranded
+# tree, so the maintainer scripts are excluded from the sweep.
+legacy_reference="$(grep -a -r -l --exclude-dir=DEBIAN -e /var/root/VirtualMac \
+    -e /var/mobile/Media/VirtualMac "$STAGE" | head -1)"
+[[ -z "$legacy_reference" ]] ||
+    die "staged file still references a pre-1.2.4 location: ${legacy_reference#"$STAGE/"}"
+
+[[ -x "$STAGE/var/jb/usr/libexec/VirtualMac/bootpd-controller.sh" ]] ||
     die "missing iPadOS 14 private DHCP controller"
-for duplicate in \
-    "$ROOTFUL_BOOTSTRAP/Applications/VirtualMac.app" \
-    "$ROOTFUL_BOOTSTRAP/usr/bin/virtualmac-diagnostics" \
-    "$ROOTFUL_BOOTSTRAP/usr/lib/TweakInject/VZKeyboardPassthrough.dylib" \
-    "$ROOTFUL_BOOTSTRAP/usr/lib/VirtualMac/libmrc.dylib" \
-    "$ROOTFUL_BOOTSTRAP/usr/sbin/VirtualMac/rtadvd"; do
-    [[ ! -e "$duplicate" ]] ||
-        die "rootful bootstrap duplicates universal payload: ${duplicate#"$STAGE/"}"
-done
+[[ -f "$STAGE/var/jb/Library/LaunchDaemons/vzi.apple.bootpd-controller.plist" ]] ||
+    die "missing iPadOS 14 private DHCP controller job"
 [[ "$(plutil -extract Label raw \
-    "$ROOTFUL_PRIVATE/Library/LaunchDaemons/com.apple.bootpd.plist")" == \
-    vzi.apple.bootpd ]] || die "iPadOS 14 bootpd must use a private label"
+    "$STAGE/var/jb/Library/LaunchDaemons/com.apple.bootpd.plist")" == \
+    vzi.apple.bootpd ]] || die "bootpd must use a private label"
 [[ "$(plutil -extract Program raw \
-    "$ROOTFUL_PRIVATE/Library/LaunchDaemons/com.apple.bootpd.plist")" == \
-    /usr/libexec/VirtualMac/bootpd ]] ||
-    die "iPadOS 14 bootpd must use a private path"
-[[ "$(plutil -extract Disabled raw \
-    "$ROOTFUL_PRIVATE/Library/LaunchDaemons/com.apple.bootpd.plist")" == \
-    true ]] || die "iPadOS 14 bootpd must install disabled until configured"
+    "$STAGE/var/jb/Library/LaunchDaemons/com.apple.bootpd.plist")" == \
+    /var/jb/usr/libexec/bootpd ]] ||
+    die "bootpd must use a package-owned path inside the prefix"
 for forbidden in \
     "$STAGE/usr/libexec/bootpd" \
-    "$STAGE/var/root/VirtualMac/bootstrap-rootful/usr/libexec/bootpd" \
-    "$STAGE/var/root/VirtualMac/bootstrap-rootful/Library/LaunchDaemons/com.apple.bootpd.plist"; do
+    "$STAGE/var/jb/usr/libexec/VirtualMac/bootstrap-rootful" \
+    "$STAGE/var/jb/usr/libexec/VirtualMac/rootful"; do
     [[ ! -e "$forbidden" ]] ||
-        die "package must not stage an Apple system-path replacement: $forbidden"
+        die "package must not stage a rootful or Apple system-path replacement: $forbidden"
 done
 
 for variant in \
@@ -123,13 +127,6 @@ for executable in \
     otool -L "$executable" | grep -Fq \
         @loader_path/../lib/NetworkMemoryPolicy.dylib ||
         die "network helper is missing memory policy: ${executable#"$STAGE/"}"
-done
-for executable in \
-    "$ROOTFUL_BOOTSTRAP/usr/libexec/VirtualMac/InternetSharing.ipados14" \
-    "$ROOTFUL_BOOTSTRAP/usr/libexec/VirtualMac/bootpd"; do
-    otool -L "$executable" | grep -Fq \
-        /usr/lib/VirtualMac/NetworkMemoryPolicy.dylib ||
-        die "rootful helper is missing memory policy: ${executable#"$STAGE/"}"
 done
 
 for name in Hypervisor ParavirtualizedGraphics Virtualization MetalSerializer \

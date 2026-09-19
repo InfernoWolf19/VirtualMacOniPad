@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/common.sh
 source "$SCRIPT_DIR/../lib/common.sh"
 
-REMOTE="${VZ_IPAD_WORK:-/var/root/VirtualMac}"
+REMOTE="${VZ_IPAD_WORK:-/var/jb/usr/libexec/VirtualMac}"
 : "${VZ_IPAD_INSTALL_IPSW:?set VZ_IPAD_INSTALL_IPSW to an on-device restore image}"
 : "${VZ_IPAD_INSTALL_BUNDLE:?set VZ_IPAD_INSTALL_BUNDLE to an on-device staging bundle}"
 : "${VZ_IPAD_INSTALL_FINAL_BUNDLE:?set VZ_IPAD_INSTALL_FINAL_BUNDLE to the final on-device VM bundle}"

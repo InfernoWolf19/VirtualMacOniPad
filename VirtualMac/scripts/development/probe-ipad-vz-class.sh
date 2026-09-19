@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../lib/common.sh
 source "$SCRIPT_DIR/../lib/common.sh"
 
-REMOTE="${VZ_IPAD_WORK:-/var/root/VirtualMac}"
+REMOTE="${VZ_IPAD_WORK:-/var/jb/usr/libexec/VirtualMac}"
 CLASS_NAME="${1:?usage: $0 ClassName}"
 
 ipad_ssh "

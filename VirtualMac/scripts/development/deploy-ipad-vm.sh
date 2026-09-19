@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/../lib/common.sh"
 
 LOCAL="$VZ_BUILD_ROOT/ipad-vm"
 PAYLOAD="$LOCAL/payload"
-REMOTE="${VZ_IPAD_WORK:-/var/root/VirtualMac}"
+REMOTE="${VZ_IPAD_WORK:-/var/jb/usr/libexec/VirtualMac}"
 ARCHIVE="$(mktemp -t VirtualMac-vm.XXXXXX.tar.gz)"
 trap 'rm -f "$ARCHIVE"' EXIT
 
@@ -67,9 +67,9 @@ else
   printf 'INSTALLATION_OVERLAY\\tnot-installed\\n'
 fi
 
-printf 'VM_LIBRARY\\t%s\\n' '/var/mobile/Media/VirtualMac'
+printf 'VM_LIBRARY\\t%s\\n' '/var/jb/var/mobile/VirtualMac'
 EOF
 )"
 
 ipad_ssh "$remote_script"
-echo "iPad VM payload deployed without altering /var/mobile/Media/VirtualMac"
+echo "iPad VM payload deployed without altering /var/jb/var/mobile/VirtualMac"

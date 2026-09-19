@@ -1,6 +1,6 @@
 # Virtual Mac on iPad
 
-People have dreamed of running macOS on iPad for [more](https://www.macstories.net/stories/macpad-how-i-created-the-hybrid-mac-ipad-laptop-and-tablet-that-apple-wont-make/) [than](https://github.com/khanhduytran0/MacWSBootingGuide) [a](https://khronokernel.com/apple/silicon/2021/01/17/QEMU-AS.html) [decade](https://worthdoingbadly.com/macappsios/). Today, that dream comes true. With Virtual Mac, iPad finally breaks free from iPadOS, enabling pro apps like Xcode, Terminal, Final Cut Pro, Logic Pro, and Pixelmator Pro to run directly on device. Requires iPad Pro (M1, M2) or iPad Air (M1) running iPadOS 14 up to 16.3.1.
+People have dreamed of running macOS on iPad for [more](https://www.macstories.net/stories/macpad-how-i-created-the-hybrid-mac-ipad-laptop-and-tablet-that-apple-wont-make/) [than](https://github.com/khanhduytran0/MacWSBootingGuide) [a](https://khronokernel.com/apple/silicon/2021/01/17/QEMU-AS.html) [decade](https://worthdoingbadly.com/macappsios/). Today, that dream comes true. With Virtual Mac, iPad finally breaks free from iPadOS, enabling pro apps like Xcode, Terminal, Final Cut Pro, Logic Pro, and Pixelmator Pro to run directly on device. Requires iPad Pro (M1, M2) or iPad Air (M1) running iPadOS 15 up to 16.3.1.
 
 ![Screenshot of Virtual Mac on iPad](VirtualMac/screenshots/VirtualMac.png)
 
@@ -8,7 +8,7 @@ As seen on: [iGeneration](https://www.igen.fr/ipad/2026/08/virtual-mac-fait-tour
 
 ## Installation
 
-1. Jailbreak a compatible iPad Pro (M1, M2) or iPad Air (M1). [View instructions for iPadOS 15 up to 16.3.1](https://ios.cfw.guide/installing-dopamine-trollstore/), or [instructions for iPadOS 14 up to 14.8.1](https://ios.cfw.guide/installing-taurine/). If jailbreak fails, switch to a different exploit in Dopamine or Taurine settings.
+1. Jailbreak a compatible iPad Pro (M1, M2) or iPad Air (M1) with a **rootless** jailbreak. [View instructions for iPadOS 15 up to 16.3.1](https://ios.cfw.guide/installing-dopamine-trollstore/). If jailbreak fails, switch to a different exploit in Dopamine settings. Rootful jailbreaks such as Taurine are not supported: Virtual Mac installs entirely inside `/var/jb`, a rootful bootstrap has no such prefix, and the package refuses to install rather than scatter files it could never clean up again.
 2. Add the [https://nfzerox.github.io/cydia/](https://nfzerox.github.io/cydia/) repository in Sileo, then search and install Virtual Mac.
 
 Ran into a problem? [Check the troubleshooting section](https://github.com/nfzerox/VirtualMacOniPad#what-if-i-encounter-crashes-bugs-or-other-issues).
@@ -17,7 +17,7 @@ Ran into a problem? [Check the troubleshooting section](https://github.com/nfzer
 
 ### Which iPad and iPadOS versions does this require?
 
-Virtual Mac on iPad requires an iPad Pro (M1, M2) or iPad Air (M1) running iPadOS 14 up to 16.3.1. iPad Pro models with 1 TB or 2 TB of storage have 16 GB of RAM and provide the best performance and experience.
+Virtual Mac on iPad requires an iPad Pro (M1, M2) or iPad Air (M1) running iPadOS 15 up to 16.3.1. iPad Pro models with 1 TB or 2 TB of storage have 16 GB of RAM and provide the best performance and experience.
 
 ### Which versions of macOS does this support?
 
@@ -48,11 +48,52 @@ Virtual Mac on iPad uses hardware CPU virtualization and supports paravirtualize
 
 With the latest update, Virtual Mac on iPad also goes beyond what VirtualBuddy and UTM offers, being first to ever support Final Cut Pro and OpenGL/OpenCL acceleration [through modified GLDRendererMetal](VirtualMac/vz/guest/OpenGLPVGCompat.m) in virtualized environments.
 
+### Can I keep Virtual Macs on an external drive?
+
+Yes, for storage. Connect a drive that appears in the Files app (APFS is recommended, because other formats store every disk image at its full size), then open Settings > Storage > External Drive Library and choose the drive. Virtual Mac creates a `VirtualMac` folder on it. Long-press a Virtual Mac, choose "Move…" and pick the drive: the bundle is copied, every file is verified against the original, and only then is the original deleted. Moving back is the same action in reverse.
+
+**Do not run a Virtual Mac from an external drive.** Every external volume on iPadOS is served by a userspace filesystem daemon, and Virtualization.framework does low-level direct disk access against the image. Doing that across a userspace filesystem has crashed a device hard enough to end the jailbreak. Use the drive to park Virtual Macs you are not using, and move one back to internal storage before starting it.
+
+New Virtual Macs are always installed on internal storage first and moved afterwards. If the drive is not connected, its Virtual Macs are hidden from the library until you reconnect it and pull down to refresh.
+
+A drive is also the only copy that outlives Virtual Mac itself. Internal storage is inside the jailbreak prefix, so uninstalling the package or removing the jailbreak deletes what is there; a drive is not, so it is untouched by both.
+
+### Why does iPadOS count my Virtual Macs as "Other System Data"?
+
+Because iPadOS builds that screen from app *containers*, and a jailbreak package does not install into one. Virtual Macs live inside the jailbreak prefix, which belongs to no bundle identifier, so Settings has nothing to attribute the space to and files it under System Data. There is no way to change that while Virtual Mac is installed as a jailbreak package.
+
+What you get instead is that the space is always reclaimable. Settings > Storage has "Delete All Virtual Machines", which removes every Virtual Mac on internal storage together with its leftover installation files, shows the count before you confirm, and leaves anything on an external drive alone. "Delete Cached IPSW" and "Delete Temporary Installation Files" do the same for a failed or cancelled install, which keeps a half-written disk image several gigabytes in size.
+
+### Where does Virtual Mac put its files, and what does uninstalling remove?
+
+Everything, inside the jailbreak prefix:
+
+| Path | Contents |
+| --- | --- |
+| `/var/jb/Applications/VirtualMac.app` | the app |
+| `/var/jb/usr/libexec/VirtualMac` | the setuid installer and the ported Apple frameworks and XPC services |
+| `/var/jb/usr/libexec`, `/var/jb/usr/lib`, `/var/jb/usr/sbin` | the networking helpers |
+| `/var/jb/Library/LaunchDaemons` | the networking launch daemons |
+| `/var/jb/usr/lib/TweakInject` | the hardware keyboard tweak |
+| `/var/jb/var/mobile/VirtualMac` | your Virtual Macs, restore images and settings |
+
+**Removing Virtual Mac in Sileo deletes every Virtual Mac on internal storage.** That is the point of keeping them in the prefix — the space is always fully reclaimable — but it is irreversible and there is no second prompt. `dpkg` only tracks files that came out of the package, so a Virtual Mac you created afterwards is removed explicitly by the uninstall script.
+
+**Removing the jailbreak deletes them too**, because it deletes the whole prefix. That includes "Remove Jailbreak" used as a troubleshooting step, and a jailbreak reinstall that replaces the bootstrap.
+
+A Virtual Mac moved to an external drive lives outside the prefix and survives both. It is the only copy that does. Park anything you care about on a drive before you touch either button, or use Settings > Storage > "Delete All Virtual Machines" when you only want the space back.
+
+One path is unavoidably outside the prefix: `/var/db/dhcpd_leases`, created for Apple's `bootpd`, which has it compiled in. Uninstalling deletes it, along with the runtime scratch files Virtual Mac leaves in `/tmp`. Two traces cannot be removed and occupy no space: the package's code-signing hashes stay in the bootstrap's trust cache, because Dopamine offers no way to remove one, and they authorize nothing once the files are gone.
+
+Releases up to 1.2.3 kept the runtime at `/var/root/VirtualMac` and Virtual Macs at `/var/mobile/Media/VirtualMac`, both outside the prefix, so removing the jailbreak first stranded them where nothing accounted for them — a common cause of "Other System Data" growing on its own. Installing this release deletes that old runtime and moves an existing library across. The move is a rename on the same volume, so it is instant and needs no free space; a name that already exists on the new side is left in the old folder rather than overwritten, and shows up in an exported diagnostics archive.
+
+Because the library is inside the prefix, importing a bundle by hand needs Filza or SSH. Tools that reach the device over AFC, such as iMazing, cannot see `/var/jb`.
+
 ### What if I encounter crashes, bugs, or other issues?
 
 First, open Sileo and update to the latest version of Virtual Mac. If the issue remains, try these fixes for common issues:
 - Virtual Mac does not support the Dopamine-roothide environment. To use Virtual Mac, remove the roothide jailbreak from Dopamine-roothide > Settings > Remove Jailbreak, then [switch to the official version of Dopamine](https://ios.cfw.guide/installing-dopamine-trollstore/).
-- If you see "[install-launcher failed: Permission denied](https://github.com/nfzerox/VirtualMacOniPad/issues/10)", update to the latest version of Virtual Mac. If the issue remains, open Filza and [follow this screenshot](VirtualMac/screenshots/troubleshooting/troubleshooting-permission.png), changing access permissions of `/var/root` to "Read, Execute" for "Others".
+- If you see "[install-launcher failed: Permission denied](https://github.com/nfzerox/VirtualMacOniPad/issues/10)", update to the latest version of Virtual Mac. Releases up to 1.2.3 kept the launcher under `/var/root` and needed that folder's permissions changed by hand; it now lives inside `/var/jb` and needs no such change. If you applied that fix before, updating reverts it for you.
 - If you see "[Unexpected device state 'DFU' expected 'RestoreOS' (Probably forced into DFU mode externally)](https://github.com/nfzerox/VirtualMacOniPad/issues/11)", update to the latest version of Virtual Mac. If the issue remains, open Sileo > Packages, search for usbmuxd and [temporarily uninstall it](VirtualMac/screenshots/troubleshooting/troubleshooting-usbmuxd.png).
 - If you see "launcher cannot become root: Operation not permitted" or "Internal Virtualization error. The virtual machine failed to start", and have Choicy installed, open Settings > Choicy > Applications > Virtual Mac, and turn off "Disable Tweak Injection". You can also uninstall Choicy.
 - Virtual Mac may conflict with certain other tweaks. If problems remain, remove other tweaks one at a time to narrow down the conflict.

@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/../lib/common.sh"
 
 : "${VZ_INSTALL_IPSW:?set VZ_INSTALL_IPSW to the restore image to copy}"
 LOCAL_IPSW="$VZ_INSTALL_IPSW"
-REMOTE_DIR="${VZ_IPAD_RESTORE_IMAGES:-/var/mobile/Media/VirtualMac/Restore Images}"
+REMOTE_DIR="${VZ_IPAD_RESTORE_IMAGES:-/var/jb/var/mobile/VirtualMac/Restore Images}"
 NAME="$(basename "$LOCAL_IPSW")"
 REMOTE_IPSW="$REMOTE_DIR/$NAME"
 REMOTE_PARTIAL="$REMOTE_IPSW.partial"

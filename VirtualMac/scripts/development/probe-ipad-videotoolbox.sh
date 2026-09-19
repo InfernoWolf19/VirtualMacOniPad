@@ -13,8 +13,8 @@ ensure_ipad_usb
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 OUT="$VZ_BUILD_ROOT/ipad-videotoolbox-probe"
 BIN="$OUT/vt-pv-probe"
-REMOTE=/var/root/VirtualMac/vt-pv-probe
-REMOTE_VT=/var/root/VirtualMac/VideoToolbox.probe
+REMOTE=/var/jb/usr/libexec/VirtualMac/vt-pv-probe
+REMOTE_VT=/var/jb/usr/libexec/VirtualMac/VideoToolbox.probe
 mkdir -p "$OUT"
 
 cdhash() {
